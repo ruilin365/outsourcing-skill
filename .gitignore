@@ -1,0 +1,15 @@
+# 中间产物 / 日志
+*.err
+*.log
+/结果*.json
+/返回*.json
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
