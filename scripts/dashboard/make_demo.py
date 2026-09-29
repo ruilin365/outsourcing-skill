@@ -26,6 +26,10 @@ def uid(n):
     return "0demo000-0000-4000-8000-%012d" % n
 
 
+# 示例「失败现场截图」文件名（与 demo 同目录，由 build_demo_failure_png() 生成）
+FAIL_SHOT = "dashboard-demo-failure.png"
+
+
 C1 = D + uid(1)   # 首版生成
 C2 = D + uid(2)   # 深色主题
 C3 = D + uid(3)   # 移动端适配
@@ -70,7 +74,7 @@ DEMO = {
             "lsPresent": True,
             "tokens": {"usertoken": {"len": 64, "sha256": "0d3f8a1c7b52"},
                        "token": {"len": 64, "sha256": "0d3f8a1c7b52"}},
-            "visits": 41, "lastVisit": "2026-03-18 22:12:41",
+            "visits": 41, "lastVisit": "2026-03-18 21:20:10",
             "firstVisit": "2026-03-17 21:30:02",
             "conversations": 4, "calls": 9, "loginState": "signed-in",
             "evidence": [
@@ -79,7 +83,7 @@ DEMO = {
                 "localStorage 中有本站记录",
                 "检测到登录凭据 usertoken（64 字符，已脱敏）",
                 "检测到登录凭据 token（64 字符，已脱敏）",
-                "历史访问 41 次，最近 2026-03-18 22:12:41"],
+                "历史访问 41 次，最近 2026-03-18 21:20:10"],
         },
         {
             "id": "chatgpt", "name": "ChatGPT", "url": "https://chatgpt.com/",
@@ -291,11 +295,95 @@ DEMO = {
 }
 
 
+def derive(d):
+    """
+    把示例数据补齐成与真实 `store.build_data()` **同构**的结构。
+
+    为什么必须补：看板前端对字段有依赖（今日调用、今日配额/历史累计、
+    最近活动来源、失败现场截图、数据源信息…）。字段缺了，示例看板的界面
+    就和真实的不一样——所以这里按真实逻辑把派生值算出来，而不是手写死值。
+    以后真实看板再加字段，这里补一行即可跟上。
+    """
+    today = "2026-03-18"                      # 与 generatedAt 同一天
+    calls = d["calls"]
+
+    # totals：今日调用数
+    d["totals"]["today"] = today
+    d["totals"]["todayCalls"] = len(
+        [c for c in calls if str(c.get("startedAt") or "").startswith(today)])
+
+    # db：顶部「数据源 / 最后一次外包调用」那一行
+    stamps_all = sorted([c["startedAt"] for c in calls if c.get("startedAt")])
+    d["db"] = {
+        "path": "web-ai.db",
+        "lastCallAt": stamps_all[-1] if stamps_all else None,
+        "lastScanAt": d["generatedAt"],
+        "callCount": len(calls),
+    }
+
+    # providers：今日调用数 / 最近一次调用 / 最近活动来源
+    for p in d["providers"]:
+        mine = sorted([c["startedAt"] for c in calls
+                       if c.get("provider") == p["id"] and c.get("startedAt")])
+        p["todayCalls"] = len([s for s in mine if s.startswith(today)])
+        p["lastCallAt"] = mine[-1] if mine else None
+        p["browserLastVisit"] = p.get("lastVisit")
+        if p["lastCallAt"] and (not p.get("lastVisit") or p["lastCallAt"] > p["lastVisit"]):
+            p["lastVisit"], p["lastVisitSource"] = p["lastCallAt"], "外包调用"
+        else:
+            p["lastVisitSource"] = "浏览器访问" if p.get("lastVisit") else None
+        p["updatedAt"] = d["generatedAt"]
+
+    # calls：会话名 + 失败现场相关字段
+    url2sess = {c["url"]: c.get("session") for c in d["conversations"]}
+    for c in calls:
+        c["session"] = url2sess.get(c.get("chatUrl"))
+        c.setdefault("shot", None)
+        c.setdefault("pageText", None)
+        c.setdefault("watchdog", None)
+
+    # 让示例里**出现一条**带失败现场的记录，否则「查看失败现场截图」这个界面
+    # 在示例看板里永远看不见（真实环境需要真出一次错才会有）
+    for c in calls:
+        if c.get("status") != "success":
+            c["shot"] = FAIL_SHOT
+            c["watchdog"] = "text:继续×1"
+            c["pageText"] = ("DeepSeek 探索未至之境 深度思考 智能搜索 请完成安全验证 "
+                             "拖动滑块完成拼图 网络繁忙，请稍后再试")
+            if not c.get("answerHead"):
+                c["answerHead"] = ("（兜底提取）页面已经答完但工具没取到时的答案示例："
+                                   "localStorage 关掉浏览器也保留，sessionStorage 关掉标签页就清空。")
+            break
+
+    # sessions：接手说明（会话熔断产物）
+    for s in d["sessions"]:
+        s.setdefault("summary", None)
+    if d["sessions"]:
+        d["sessions"][0]["summary"] = (
+            "任务目标：把单文件记账小工具做完（增删改查 + 深色模式 + 移动端适配）。\n"
+            "已达成：ledger.html 已可用，分类下拉与滑动删除已加；深色模式跟随系统。\n"
+            "遗留：导出 CSV 的中文乱码问题待确认；iOS 上「+」按钮遮挡需回归一次。\n"
+            "约束：纯前端、单文件、零依赖，不引入任何 CDN。")
+
+    # quota：今日调用数（跨天归零）+ 历史累计
+    for q in d["quota"]:
+        mine = sorted([c["startedAt"] for c in calls
+                       if c.get("provider") == q["provider"] and c.get("startedAt")])
+        q["calls"] = len([s for s in mine if s.startswith(today)])
+        q["totalCalls"] = len(mine)
+        q["date"] = today
+        q["toolHistory"] = q.pop("history", [])
+        if mine:
+            q["lastCallAt"] = mine[-1]
+
+    return d
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(HERE), "..", "examples", "dashboard-demo.html")
     out = os.path.abspath(out)
-    payload = json.dumps(DEMO, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(derive(DEMO), ensure_ascii=False, separators=(",", ":"))
     payload = payload.replace("</", "<\\/")
     html = R.TPL.replace("__DATA__", payload)
     os.makedirs(os.path.dirname(out), exist_ok=True)
