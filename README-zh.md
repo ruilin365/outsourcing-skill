@@ -51,7 +51,10 @@
 ├── NOTICE
 ├── scripts/
 │   ├── extract.py           # 从 AI 返回中抽取「完整文件」
-│   └── apply_patch.py       # 把「改前/改后」片段「精确替换」进本地文件
+│   ├── apply_patch.py       # 把「改前/改后」片段「精确替换」进本地文件
+│   └── dashboard/
+│       ├── collect.py       # 扫描本机：站点登录态 / 历史对话 / 调用记录 -> data.json
+│       └── render.py        # data.json -> 离线单文件看板 dashboard.html + checklist.md
 └── examples/
     └── todo-app-demo.html   # 由本流程产出的示例（单文件待办 App）
 ```
@@ -73,6 +76,21 @@ python scripts/apply_patch.py 返回.json 目标.html
 ```
 
 `extract.py` / `apply_patch.py` 均为纯标准库 Python，无需安装依赖。
+
+## 站点 / 对话看板
+
+想知道「哪些站点登录了、之前聊过什么、调用过几次」，跑两条命令即可：
+
+```bash
+cd <你的产出目录>
+python <skill>/scripts/dashboard/collect.py --tasks .   # 本机只读扫描 -> data.json
+python <skill>/scripts/dashboard/render.py              # -> dashboard.html + checklist.md
+```
+
+看板（离线单文件，双击打开）四个页签：站点与登录态（含判定证据与配额条）、历史对话（含会话名与调用次数）、调用流水（时间线 + 提示词原文）、本地产出。
+
+浏览器 profile、工具目录、产出目录均自动探测，也可用 `--awa` / `--tool` / `--tasks`（或环境变量 `AWA_HOME` / `AWA_TOOL` / `AWA_TASKS`）指定。
+登录凭据**只记录长度与指纹，不落明文**；生成的 `data.json` / `dashboard.html` 含本机路径，已在 `.gitignore` 中排除。
 
 ## 安全提示
 

@@ -8,6 +8,12 @@
 __pycache__/
 *.py[cod]
 
+# 看板生成物（含本机路径与对话 URL，勿提交）
+/scripts/dashboard/data.json
+/scripts/dashboard/dashboard.html
+/scripts/dashboard/checklist.md
+*.sqlite
+
 # 编辑器 / 系统
 .vscode/
 .idea/

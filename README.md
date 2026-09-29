@@ -51,7 +51,10 @@ User ──"outsource"──▶ Supervisor (Agent) ──concise req.──▶ W
 ├── NOTICE
 ├── scripts/
 │   ├── extract.py           # Extract a full file from the AI's reply
-│   └── apply_patch.py       # Apply "before/after" snippets as exact replacements
+│   ├── apply_patch.py       # Apply "before/after" snippets as exact replacements
+│   └── dashboard/
+│       ├── collect.py       # Local read-only scan: sites / history / calls -> data.json
+│       └── render.py        # data.json -> offline single-file dashboard.html + checklist.md
 └── examples/
     └── todo-app-demo.html   # A demo output produced by this workflow
 ```
@@ -74,6 +77,21 @@ python scripts/apply_patch.py reply.json target.html
 ```
 
 Both scripts are pure standard-library Python — no dependencies.
+
+## Sites & history dashboard
+
+To answer "which AI sites am I signed in to, what did I discuss before, how many calls were made":
+
+```bash
+cd <your-output-dir>
+python <skill>/scripts/dashboard/collect.py --tasks .   # local read-only scan -> data.json
+python <skill>/scripts/dashboard/render.py              # -> dashboard.html + checklist.md
+```
+
+The dashboard is a single offline HTML file with four tabs: sites & sign-in state (with evidence and quota bars), past conversations (session names, call counts), call timeline (prompts, latency, status), and local artifacts.
+
+Browser profile, tool directory and output directory are auto-detected; override with `--awa` / `--tool` / `--tasks` (or `AWA_HOME` / `AWA_TOOL` / `AWA_TASKS`).
+Credentials are recorded as **length + fingerprint only, never in plaintext**; generated `data.json` / `dashboard.html` contain local paths and are excluded via `.gitignore`.
 
 ## Security note
 

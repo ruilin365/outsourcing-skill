@@ -1,0 +1,1951 @@
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/README.md free-web-ai-worker-patched/README.md
+--- free-web-ai-worker/README.md	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/README.md	2026-09-24 09:37:43.648506200 +0800
+@@ -299,6 +299,8 @@
+ ask-web-ai ask "<prompt>"                 # ask (JSON by default when piped)
+ ask-web-ai ask "<prompt>" --text          # human-readable output
+ ask-web-ai ask "<prompt>" --no-cache      # bypass the answer cache
++ask-web-ai ask "<prompt>" --no-new-chat   # continue the site's current conversation
++ask-web-ai ask "<prompt>" -a ./pic.png    # attach a local file (repeatable; e.g. image OCR)
+ ask-web-ai login --provider deepseek      # one-time login in the dedicated profile
+ ask-web-ai browser                        # which browser is used / installed
+ ask-web-ai browser --use chrome           # switch browser
+@@ -310,6 +312,9 @@
+ ask-web-ai status                         # browser + profile + defaults
+ ```
+ 
++See [`docs/prompting.md`](docs/prompting.md) for how to start a new conversation
++and how to shape a prompt (中文: [`docs/prompting.zh-CN.md`](docs/prompting.zh-CN.md)).
++
+ ---
+ 
+ ## Troubleshooting
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/ask-web-ai.cmd free-web-ai-worker-patched/ask-web-ai.cmd
+--- free-web-ai-worker/ask-web-ai.cmd	1970-01-01 08:00:00.000000000 +0800
++++ free-web-ai-worker-patched/ask-web-ai.cmd	2026-09-24 09:36:54.998864500 +0800
+@@ -0,0 +1,6 @@
++@echo off
++REM Convenience launcher for free-web-ai-worker (patched).
++REM Uses the WorkBuddy-managed Node.js so it works without a system install.
++setlocal
++set "NODE=C:\Users\admin\.workbuddy\binaries\node\versions\22.22.2-3\node.exe"
++"%NODE%" "%~dp0bin\ask-web-ai.js" %*
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/config/default.json free-web-ai-worker-patched/config/default.json
+--- free-web-ai-worker/config/default.json	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/config/default.json	2026-09-24 09:18:37.500845700 +0800
+@@ -2,6 +2,7 @@
+   "browser": {
+     "preferred": "edge",
+     "port": 9222,
++    "_headless_comment": "Honoured now (adds --headless=new). Discouraged: several sites serve a bot check to a headless window. Prefer a visible window.",
+     "headless": false,
+     "profileDir": "~/.agent-web-ai/profiles",
+     "chromePath": null,
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/docs/prompting.md free-web-ai-worker-patched/docs/prompting.md
+--- free-web-ai-worker/docs/prompting.md	1970-01-01 08:00:00.000000000 +0800
++++ free-web-ai-worker-patched/docs/prompting.md	2026-09-24 09:18:53.680014500 +0800
+@@ -0,0 +1,182 @@
++# Writing prompts for free-web-ai-worker
++
++This tool only carries **plain text in and plain text out**. The web AI cannot
++see your conversation, your files, or your repository — so every prompt must be
++self-contained. Everything below follows from that one constraint.
++
++---
++
++## 1. Starting a new conversation
++
++You usually do not have to think about this:
++
++- Every call opens the site root in a **fresh tab**, which is already a new chat
++  for Duck.ai, Qwen, DeepSeek and others.
++- With `defaults.newChat: true` (the default) the tool additionally clicks the
++  site's own **"New chat" control** when it can find one (`NEW_CHAT` selectors
++  in each provider). This matters for sites that restore the previous thread,
++  where a stale conversation could bleed into your answer.
++- Pass `--no-new-chat` to continue the site's current conversation instead.
++
++You do **not** need to ask the web AI to "start a new chat" — that is the
++tool's job, not the prompt's.
++
++---
++
++## 2. The shape of a good prompt (5 parts)
++
++```
++1. Instruction     "You are a careful editor."
++2. Task verb       "Summarise the text below."
++3. Input           delimited — see §4
++4. Output format   "Output exactly 3 bullet points, each under 20 words."
++5. Constraint      "Output only the bullets. No preamble, no explanation."
++```
++
++Most bad delegations are missing parts 4 and 5: the model then answers with
++"How can I help?" or three paragraphs of commentary around the one line you
++wanted.
++
++---
++
++## 3. Control the output format explicitly
++
++Be boring and literal. State the exact shape, and give a one-line example.
++
++| You want | Say this |
++|---|---|
++| Machine-readable | `Output only a JSON object with keys name, date, amount. No code fences, no explanation.` |
++| One label per line | `Output one label per line, in the same order as the input. Nothing else.` |
++| Translation only | `Output the translation only. Do not add the original text.` |
++| Strict vocabulary | `Use only the labels: bug, feature, question.` |
++| No commentary | `Do not explain your reasoning. Do not add a summary.` |
++
++If you need to parse it, say **"Output only JSON"** and strip code fences
++anyway before parsing — a model may wrap it in ```json regardless.
++
++---
++
++## 4. Delimit the input
++
++Never let the model guess where the instruction ends and the text begins.
++Wrap the payload:
++
++```bash
++ask-web-ai ask "Summarise the text between <text> tags in 3 sentences. Output only the summary.
++
++<text>
++...long article...
++</text>" -p duckai --json
++```
++
++Alternatives that work well: `---` fences, `###`, or an explicit
++`INPUT:\n...\nEND INPUT`.
++
++---
++
++## 5. Length and encoding
++
++- Prefer prompts under a few thousand characters. For anything longer, avoid
++  shell-escaping entirely and use a file or pipe:
++
++```bash
++ask-web-ai ask --file ./subtask.txt -p duckai --json
++cat notes.md | ask-web-ai ask --stdin -p duckai --json
++```
++
++- The answer is capped at `defaults.maxAnswerChars` (200k by default) and
++  `meta.truncated` tells you if it was cut.
++- **Never paste secrets.** The prompt travels to a third-party website.
++
++---
++
++## 6. State the output language
++
++The site may default to its own UI language. If you want Chinese out, say so:
++
++```
++Output in Simplified Chinese.
++```
++
++---
++
++## 7. What NOT to put in a prompt
++
++These belong on the main model — the router will tell you so:
++
++- anything needing your repository, files, or project context
++- editing files, running tests, using tools
++- multi-step work ("first do X, then based on that do Y")
++- current facts (prices, news, today's version) — the web AI will hallucinate
++- security-critical judgement
++
++Ask first:
++
++```bash
++ask-web-ai route "Summarise this article"     # -> DELEGATE
++ask-web-ai route "Refactor the auth module"   # -> KEEP
++```
++
++---
++
++## 8. Templates
++
++**Summarise**
++
++```
++Summarise the text between <text> tags in 3 sentences. Output only the summary.
++
++<text>
++{{TEXT}}
++</text>
++```
++
++**Classify a batch**
++
++```
++Classify each line as bug / feature / question.
++Output one label per line, in the same order as the input. Nothing else.
++
++{{LINES}}
++```
++
++**Extract to JSON**
++
++```
++Extract name, date and amount from the text between <text> tags.
++Output only a JSON object with keys name, date, amount. No code fences.
++
++<text>
++{{TEXT}}
++</text>
++```
++
++**Translate**
++
++```
++Translate the text between <text> tags into English.
++Output the translation only, with no original text and no notes.
++
++<text>
++{{TEXT}}
++</text>
++```
++
++**Rewrite tone**
++
++```
++Rewrite the text between <text> tags to sound more formal and concise.
++Keep the meaning identical. Output only the rewritten text.
++
++<text>
++{{TEXT}}
++</text>
++```
++
++---
++
++## 9. Always verify
++
++Treat `answer` as **untrusted text**. Validate or re-check anything
++safety-critical before you use it — web AIs hallucinate, and this tool returns
++whatever the page produced.
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/docs/prompting.zh-CN.md free-web-ai-worker-patched/docs/prompting.zh-CN.md
+--- free-web-ai-worker/docs/prompting.zh-CN.md	1970-01-01 08:00:00.000000000 +0800
++++ free-web-ai-worker-patched/docs/prompting.zh-CN.md	2026-09-24 09:19:02.418481700 +0800
+@@ -0,0 +1,163 @@
++# 如何给 free-web-ai-worker 写提示词
++
++这个工具只搬运**纯文本**：文本进去、文本出来。网页版 AI **看不到**你的对话、你的文件、你的代码库，所以每条提示词都必须**自包含**。下面所有原则都从这一条推出来。
++
++---
++
++## 一、怎么"新建对话"
++
++通常你**不用管**：
++
++- 每次调用都会**新开一个标签页**打开站点首页，对 Duck.ai、Qwen、DeepSeek 等来说**首页本身就是新对话**。
++- 配置 `defaults.newChat: true`（默认开启）时，工具还会**额外点击站点自己的「新对话 / New chat」按钮**（各 provider 的 `NEW_CHAT` 选择器）。这一步是给那些**会自动恢复上一轮会话**的站点兜底的，防止旧对话串进你的答案。
++- 想继续当前会话，加 `--no-new-chat`。
++
++> 换句话说：**"新建对话"是工具的事，不用写进提示词里。** 你不需要跟 AI 说"请新开一个对话"。
++
++---
++
++## 二、好提示词的 5 个部件
++
++```
++1. 角色/指令     "你是一名严谨的编辑。"
++2. 任务动词      "总结下面这段文字。"
++3. 输入内容      用分隔符包起来（见第四节）
++4. 输出格式      "输出恰好 3 条要点，每条不超过 20 字。"
++5. 边界约束      "只输出这些要点，不要开场白，不要解释。"
++```
++
++**大多数失败的委派，都缺第 4、5 条**——于是模型回你一句"我能帮你做什么？"，或者在你想要的那一行外面裹三段落评论。
++
++---
++
++## 三、明确指定输出格式
++
++写得越死板越好。给出精确格式，并给**一行示例**。
++
++| 你想要 | 就这么写 |
++|---|---|
++| 机器可读 | `只输出一个 JSON 对象，键为 name、date、amount。不要代码块，不要解释。` |
++| 每行一个标签 | `每行输出一个标签，顺序与输入一致，不要任何多余内容。` |
++| 只要译文 | `只输出译文，不要附带原文。` |
++| 限定词表 | `只能使用这些标签：bug、feature、question。` |
++| 不要推理 | `不要解释你的推理过程，不要加总结。` |
++
++需要程序解析时，写 **"只输出 JSON"**，但**解析前仍要剥掉 ```json 代码块围栏**——模型经常照包不误。
++
++---
++
++## 四、把输入"框"起来
++
++绝不要让模型去猜"哪句是指令、哪段是正文"。把正文包进分隔符：
++
++```bash
++ask-web-ai ask "把 <text> 标签之间的文字总结成 3 句话。只输出总结。
++
++<text>
++……很长的文章……
++</text>" -p duckai --json
++```
++
++好用的分隔符还有：`---` 围栏、`###`、或显式的 `INPUT:\n...\nEND INPUT`。
++
++---
++
++## 五、长度与转义
++
++- 提示词尽量控制在几千字符以内。更长的内容不要硬塞命令行，改用文件或管道：
++
++```bash
++ask-web-ai ask --file ./子任务.txt -p duckai --json
++cat 笔记.md | ask-web-ai ask --stdin -p duckai --json
++```
++
++- 答案长度上限是 `defaults.maxAnswerChars`（默认 20 万字符），`meta.truncated` 会告诉你是否被截断。
++- **千万不要粘机密内容**——提示词会发往第三方网站。
++
++---
++
++## 六、明确指定输出语言
++
++站点可能默认用它自己的界面语言。想要中文就写明：
++
++```
++请用简体中文输出。
++```
++
++---
++
++## 七、**不该**外包的东西
++
++这些该留在主模型（先跑 `ask-web-ai route` 它会告诉你）：
++
++- 需要你的代码库 / 文件 / 项目上下文的
++- 要改文件、跑测试、用工具的
++- 多步骤、后一步依赖前一步结果的（"先……然后根据结果再……"）
++- 需要实时事实的（价格、新闻、今天的版本号）——网页 AI 会一本正经地瞎编
++- 涉及安全判断的
++
++```bash
++ask-web-ai route "总结这篇文章"        # -> DELEGATE
++ask-web-ai route "重构 auth 模块"      # -> KEEP
++```
++
++---
++
++## 八、可复制的模板
++
++**总结**
++
++```
++把 <text> 标签之间的文字总结成 3 句话。只输出总结。
++
++<text>
++{{正文}}
++</text>
++```
++
++**批量分类**
++
++```
++把每一行分类为 bug / feature / question。
++每行输出一个标签，顺序与输入一致，不要任何多余内容。
++
++{{若干行}}
++```
++
++**抽取为 JSON**
++
++```
++从 <text> 标签之间的文字中抽取 name、date、amount。
++只输出一个 JSON 对象，键为 name、date、amount，不要代码块。
++
++<text>
++{{正文}}
++</text>
++```
++
++**翻译**
++
++```
++把 <text> 标签之间的文字翻译成英文。
++只输出译文，不要原文，不要注释。
++
++<text>
++{{正文}}
++</text>
++```
++
++**改写语气**
++
++```
++把 <text> 标签之间的文字改写得更正式、更简洁，含义保持不变。只输出改写后的文字。
++
++<text>
++{{正文}}
++</text>
++```
++
++---
++
++## 九、永远要复核
++
++把 `answer` 当作**不可信文本**。任何关键结论在使用前都要校验——网页 AI 会幻觉，而本工具只是把页面上出现的内容原样取回。
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/skills/free-web-ai-worker/SKILL.md free-web-ai-worker-patched/skills/free-web-ai-worker/SKILL.md
+--- free-web-ai-worker/skills/free-web-ai-worker/SKILL.md	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/skills/free-web-ai-worker/SKILL.md	2026-09-24 10:22:14.464003400 +0800
+@@ -78,6 +78,24 @@
+ cat notes.md | ask-web-ai ask --stdin --provider duckai --json
+ ```
+ 
++### Attaching a file (image, PDF, ...)
++
++```bash
++ask-web-ai ask "Transcribe the text in this image, then explain what it is for." \
++  -p deepseek --attach ./photo.png --json
++```
++
++`--attach <path>` is repeatable (`-a` for short). The tool only *hands* the file to
++the site; whether the site accepts it depends on the account — a signed-out
++session usually rejects uploads, in which case you get a clear
++`attachment_failed` result (never a silent empty answer). Run
++`login --provider <id>` once for a site you actually have an account on, then
++attach freely.
++
++> OCR / vision needs a provider with image support. Use a signed-in provider
++> (deepseek, qwen, chatgpt, gemini) — `duckai` is text-only and declares no
++> attachment support on purpose.
++
+ ### Result contract
+ 
+ Success -- stdout is pure JSON, logs go to stderr:
+@@ -119,6 +137,77 @@
+ | `extraction_failed` | answer appeared but text was empty | check the screenshot; usually needs a new selector |
+ | `internal_error` | anything else | check stderr logs |
+ 
++---
++
++## Conversations: a new chat vs. resuming the same thread
++
++Every call opens the provider's **home URL** in a fresh tab, and for most sites
++that home URL *is* a brand-new conversation. So:
++
++- **New chat (default).** `defaults.newChat: true` also clicks the site's own
++  "New chat" control when one exists, so a previous thread cannot bleed into the
++  answer. This is what you want for one-off, self-contained subtasks.
++- **Resume a thread you care about → use `--session <name>`.** Do **not** rely on
++  `--no-new-chat`: it only skips clicking "New chat", but the tab has already been
++  navigated to the site root (a new chat), so the previous context is gone.
++  Give the conversation a name instead:
++
++  ```bash
++  # 1st call: creates the conversation, remembers its URL under "todo-html"
++  ask-web-ai ask --session todo-html --provider deepseek \
++    --file change1.txt --attach ./app.html --json
++
++  # later call: navigates straight back into that SAME conversation, so the
++  # web AI still remembers app.html — no re-upload needed
++  ask-web-ai ask --session todo-html --provider deepseek \
++    --file change2.txt --json
++  ```
++
++The name → conversation-URL map lives in `~/.agent-web-ai/chats.json`. You map a
++task to its URL once and reuse it; the site's own title is irrelevant. Manage it:
++
++```bash
++ask-web-ai chats                 # list saved conversations
++ask-web-ai chats show todo-html  # one entry (prints the URL)
++ask-web-ai chats rename old new  # rename the LOCAL name (URL unchanged)
++ask-web-ai chats rm todo-html    # forget it
++```
++
++`--chat-url <url>` resumes an explicit URL directly (implies `--no-new-chat`).
++
++You never need to ask the web AI to "start a new conversation" — that is the
++tool's job, not the prompt's.
++
++> Pitfall — entry point: run the CLI as `node bin/ask-web-ai.js ...` (or the
++> installed `ask-web-ai`). Running `src/cli.js` directly does nothing — that file
++> only exports `main()`, so the process exits 0 with no output at all.
++
++## Writing the prompt
++
++The web AI sees **only** the prompt — no conversation, no files, no repository.
++Every prompt must therefore be self-contained and shaped in five parts:
++
++1. instruction — "You are a careful editor."
++2. task verb — summarise / translate / classify / extract / rewrite
++3. input, **delimited** — `<text>…</text>`, `---` fences, or `INPUT: … END INPUT`
++4. output format, stated exactly, with a one-line example
++5. constraint — "Output only the JSON. No preamble, no explanation."
++
++The two most common failures are omitting (4) and (5): the model answers with a
++question, or wraps the result you wanted inside three paragraphs of commentary.
++Also state the **output language** explicitly (a site may default to its own UI
++language), and never paste secrets — the prompt goes to a third-party website.
++
++For long input, avoid shell escaping entirely:
++
++```bash
++ask-web-ai ask --file ./subtask.txt -p duckai --json
++cat notes.md | ask-web-ai ask --stdin -p duckai --json
++```
++
++Full guide with copy-paste templates: [`docs/prompting.md`](../../docs/prompting.md)
++(中文: [`docs/prompting.zh-CN.md`](../../docs/prompting.zh-CN.md)).
++
+ ## Rules
+ 
+ 1. **One subtask per call.** Prompts must be self-contained: the web AI cannot
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/cli.js free-web-ai-worker-patched/src/cli.js
+--- free-web-ai-worker/src/cli.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/cli.js	2026-09-24 10:10:39.454636000 +0800
+@@ -34,6 +34,11 @@
+ import { usageReport, DEFAULT_THROTTLE } from './core/throttle.js';
+ import { cacheStats, cacheClear } from './core/cache.js';
+ import { routeTask, routeTasks } from './core/router.js';
++import { getChat, listChats, renameChat, removeChat, chatsPath } from './core/chats.js';
++
++/** Browser ids and labels used by the `browser` command (declared up front). */
++const BROWSER_LABELS = { edge: 'Microsoft Edge', chrome: 'Google Chrome' };
++const BROWSER_IDS = Object.keys(BROWSER_LABELS);
+ 
+ const USAGE = `free-web-ai-worker — delegate simple text subtasks to a free web AI chat.
+ 
+@@ -47,6 +52,10 @@
+   ask-web-ai route "<task>"                Decide delegate vs keep (no network call)
+   ask-web-ai limits                        Show today's usage vs the anti-abuse caps
+   ask-web-ai cache [--clear]               Show or clear cached answers
++  ask-web-ai chats [list]                  List saved named conversations
++  ask-web-ai chats show <name>             Show one saved conversation
++  ask-web-ai chats rename <old> <new>      Rename a saved conversation
++  ask-web-ai chats rm <name>               Forget a saved conversation
+   ask-web-ai status                        Show browser / profile / provider status
+   ask-web-ai --help                        Show this help
+ 
+@@ -62,6 +71,13 @@
+       --dry-run          Validate config/provider without opening a browser
+       --no-throttle      Skip the local anti-abuse guard (not recommended)
+       --no-cache         Ignore any cached answer and ask the site again
++      --no-new-chat      Continue the site's current conversation instead of starting a new one
++      --session <name>   Create or resume a NAMED conversation (its URL is remembered
++                         in ~/.agent-web-ai/chats.json, so later runs land back in
++                         the SAME thread — re-uploading the context is unnecessary)
++      --chat-url <url>   Resume a specific conversation by its URL (implies --no-new-chat)
++      --attach <path>    Attach a local file to the message (repeatable; e.g. an image for OCR)
++      -a <path>          Alias for --attach
+ 
+ Examples:
+   ask-web-ai ask "Summarise this in 3 bullet points: ..."
+@@ -78,22 +94,27 @@
+ 
+ function parseArgs(argv) {
+   const out = { _: [], flags: {} };
+-  const alias = { '-p': '--provider', '-t': '--timeout', '-h': '--help' };
++  const alias = { '-p': '--provider', '-t': '--timeout', '-a': '--attach', '-h': '--help' };
++  // Flags that may appear more than once and accumulate into an array.
++  const repeatable = new Set(['--attach']);
++  const setFlag = (key, value) => {
++    out.flags[key] = repeatable.has(key) ? [].concat(out.flags[key] || [], value) : value;
++  };
+   for (let i = 0; i < argv.length; i++) {
+     let token = argv[i];
+     if (alias[token]) token = alias[token];
+     if (token.startsWith('--')) {
+       const eq = token.indexOf('=');
+       if (eq > -1) {
+-        out.flags[token.slice(0, eq)] = token.slice(eq + 1);
++        setFlag(token.slice(0, eq), token.slice(eq + 1));
+         continue;
+       }
+       const next = argv[i + 1];
+       if (next && !next.startsWith('--')) {
+-        out.flags[token] = next;
++        setFlag(token, next);
+         i++;
+       } else {
+-        out.flags[token] = true;
++        setFlag(token, true);
+       }
+     } else {
+       out._.push(token);
+@@ -115,6 +136,10 @@
+     dryRun: !!flags['--dry-run'],
+     noThrottle: !!flags['--no-throttle'],
+     noCache: !!flags['--no-cache'],
++    newChat: flags['--no-new-chat'] ? false : flags['--new-chat'] ? true : undefined,
++    attachments: flags['--attach'] ? [].concat(flags['--attach']) : undefined,
++    session: typeof flags['--session'] === 'string' ? flags['--session'] : undefined,
++    chatUrl: typeof flags['--chat-url'] === 'string' ? flags['--chat-url'] : undefined,
+   };
+ }
+ 
+@@ -439,6 +464,70 @@
+   process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+ }
+ 
++async function cmdChats(args) {
++  const json = args.flags['--json'] || !process.stdout.isTTY;
++  const sub = args._[0] || 'list';
++
++  if (sub === 'list') {
++    const items = listChats().map((c) => ({
++      name: c.name,
++      provider: c.provider || null,
++      url: c.url || null,
++      updatedAt: c.updatedAt || null,
++    }));
++    if (json) {
++      process.stdout.write(JSON.stringify({ status: 'success', path: chatsPath(), chats: items }, null, 2) + '\n');
++      return;
++    }
++    if (!items.length) {
++      process.stdout.write(`(no saved conversations) — create one with: ask-web-ai ask --session <name> "<prompt>"\n`);
++      return;
++    }
++    process.stdout.write(`Saved conversations (${chatsPath()}):\n`);
++    for (const c of items) {
++      process.stdout.write(`  ${c.name.padEnd(24)} ${String(c.provider || '-').padEnd(10)} ${c.updatedAt || ''}  ${c.url || ''}\n`);
++    }
++    return;
++  }
++
++  if (sub === 'show') {
++    const name = args._[1];
++    const chat = name ? getChat(name) : null;
++    process.stdout.write(JSON.stringify({ status: chat ? 'success' : 'error', chat: chat || null }, null, 2) + '\n');
++    if (!chat) process.exitCode = 1;
++    return;
++  }
++
++  if (sub === 'rename') {
++    const [oldName, newName] = args._.slice(1);
++    if (!oldName || !newName) {
++      process.stderr.write('Usage: ask-web-ai chats rename <old-name> <new-name>\n');
++      process.exitCode = 2;
++      return;
++    }
++    const ok = renameChat(oldName, newName);
++    process.stdout.write(JSON.stringify({ status: ok ? 'success' : 'error', action: 'renamed', from: oldName, to: newName }, null, 2) + '\n');
++    if (!ok) process.exitCode = 1;
++    return;
++  }
++
++  if (sub === 'rm' || sub === 'remove' || sub === 'delete') {
++    const name = args._[1];
++    if (!name) {
++      process.stderr.write('Usage: ask-web-ai chats rm <name>\n');
++      process.exitCode = 2;
++      return;
++    }
++    const ok = removeChat(name);
++    process.stdout.write(JSON.stringify({ status: ok ? 'success' : 'error', action: 'removed', name }, null, 2) + '\n');
++    if (!ok) process.exitCode = 1;
++    return;
++  }
++
++  process.stderr.write(`Unknown chats subcommand "${sub}". Use: list | show <name> | rename <old> <new> | rm <name>\n`);
++  process.exitCode = 2;
++}
++
+ async function cmdStatus(args) {
+   const cfg = loadConfig();
+   const detail = await probeCdp(cfg.browser.port);
+@@ -471,9 +560,6 @@
+   process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+ }
+ 
+-const BROWSER_LABELS = { edge: 'Microsoft Edge', chrome: 'Google Chrome' };
+-const BROWSER_IDS = Object.keys(BROWSER_LABELS);
+-
+ export async function main(argv = process.argv.slice(2)) {
+   const args = parseArgs(argv);
+   if (args.flags['--help'] || args.flags['-h'] || args._.length === 0) {
+@@ -504,6 +590,9 @@
+       case 'cache':
+         await cmdCache(args);
+         break;
++      case 'chats':
++        await cmdChats(args);
++        break;
+       case 'status':
+         await cmdStatus(args);
+         break;
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/ask.js free-web-ai-worker-patched/src/core/ask.js
+--- free-web-ai-worker/src/core/ask.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/core/ask.js	2026-09-24 10:10:16.822956600 +0800
+@@ -15,21 +15,45 @@
+  *     repeated or rapid use cannot turn into an abusive traffic pattern.
+  */
+ 
++import { existsSync } from 'node:fs';
++import { resolve } from 'node:path';
+ import { loadConfig } from './config.js';
+ import { ErrorCodes, WebAIError, toWebAIError } from './errors.js';
+ import { configureLogger, log } from './logger.js';
+ import { ensureBrowser, detach, openPage, resolveBrowser, profileDirFor } from './browser.js';
++import { getChat, putChat } from './chats.js';
+ import { captureFailure } from './artifacts.js';
+ import { checkAllowed, recordSuccess, recordAttempt, recordBlock } from './throttle.js';
+ import { cacheGet, cachePut } from './cache.js';
+ import { createProvider, knownProviderIds } from '../providers/index.js';
+ 
++function normaliseAttachments(list) {
++  if (!list) return [];
++  const arr = Array.isArray(list) ? list : [list];
++  const out = [];
++  for (const p of arr) {
++    if (typeof p !== 'string' || !p.trim()) continue;
++    const abs = resolve(p);
++    if (!existsSync(abs)) {
++      throw new WebAIError(`Attachment not found: ${abs}`, ErrorCodes.INVALID_INPUT, { path: abs });
++    }
++    out.push(abs);
++  }
++  return out;
++}
++
+ function normaliseOptions(options) {
+   const cfg = loadConfig();
+   const o = options || {};
+-  const prompt = typeof o.prompt === 'string' ? o.prompt : '';
++  const attachments = normaliseAttachments(o.attachments);
++  let prompt = typeof o.prompt === 'string' ? o.prompt : '';
+   if (!prompt.trim()) {
+-    throw new WebAIError('prompt must be a non-empty string', ErrorCodes.INVALID_INPUT);
++    if (attachments.length) {
++      // An attachment with no instruction still deserves a sensible default.
++      prompt = '请阅读并处理附件内容，把主要内容转成文字。';
++    } else {
++      throw new WebAIError('prompt must be a non-empty string', ErrorCodes.INVALID_INPUT);
++    }
+   }
+ 
+   const provider = (o.provider || cfg.defaults.provider || 'duckai').toLowerCase();
+@@ -65,7 +89,13 @@
+     dryRun: !!o.dryRun,
+     noThrottle: !!o.noThrottle,
+     noCache: !!o.noCache,
++    newChat: o.newChat ?? (cfg.defaults.newChat !== false),
++    attachments,
+     cacheTtlSeconds: Number(o.cacheTtlSeconds ?? cfg.cache?.ttlSeconds ?? 3600),
++    // Named-conversation support: `session` remembers a conversation by name so
++    // later runs land back in the SAME thread; `chatUrl` targets one directly.
++    session: typeof o.session === 'string' && o.session.trim() ? o.session.trim() : null,
++    chatUrl: typeof o.chatUrl === 'string' && o.chatUrl.trim() ? o.chatUrl.trim() : null,
+   };
+ }
+ 
+@@ -81,6 +111,8 @@
+  * @param {boolean} [options.noThrottle]   skip interval/quota/breaker checks
+  * @param {boolean} [options.noCache]      bypass the answer cache
+  * @param {number}  [options.cacheTtlSeconds]
++ * @param {string}  [options.session]      named conversation to create or resume
++ * @param {string}  [options.chatUrl]      explicit conversation URL to resume
+  * @returns {Promise<object>} structured result — never throws
+  */
+ export async function askWebAI(options = {}) {
+@@ -110,7 +142,7 @@
+ 
+   // ---- cache ---------------------------------------------------------------
+   if (cfg.cache?.enabled !== false && !opts.noCache) {
+-    const hit = cacheGet(profileDir, providerId, prompt, opts.cacheTtlSeconds);
++    const hit = cacheGet(profileDir, providerId, prompt, opts.cacheTtlSeconds, opts.attachments);
+     if (hit) {
+       log.info('ask_web_ai success (from cache)', { provider: providerId, chars: hit.answer.length });
+       return {
+@@ -151,22 +183,61 @@
+   let page = null;
+   let provider = null;
+ 
++  // One budget for browser launch + navigation + answer. Previously `timeoutMs`
++  // bounded only the answer wait, so a slow launch or navigation could push the
++  // real duration far past what the caller asked for. Now the whole call is
++  // capped, and the provider stops early when the budget is gone.
++  const overallDeadline = Date.now() + timeoutMs;
++  const abortController = new AbortController();
++  const overallTimer = setTimeout(() => abortController.abort(), timeoutMs);
++
+   try {
+     provider = createProvider(providerId, cfg);
+-    const { browser: b, context, browserInfo } = await ensureBrowser(cfg, { initialUrl: provider.url });
++
++    // Decide which conversation to open. A provider's home URL opens a BRAND NEW
++    // conversation, so to "continue the earlier one" we must navigate back to
++    // that conversation's own URL — either an explicit --chat-url or one we
++    // remembered under a session name.
++    const knownSession = opts.session ? getChat(opts.session) : null;
++    const resumeUrl = opts.chatUrl || knownSession?.url || null;
++    const resuming = !!resumeUrl;
++    const targetUrl = resumeUrl || provider.url;
++    log.info(resuming ? 'Resuming an existing conversation' : 'Opening a fresh conversation', {
++      provider: providerId,
++      session: opts.session || undefined,
++      url: targetUrl,
++    });
++
++    const { browser: b, context, browserInfo } = await ensureBrowser(cfg, { initialUrl: targetUrl });
+     browser = b;
+ 
+-    page = await openPage(context, provider.url, { waitMs: Math.max(30000, Math.min(timeoutMs, 60000)) });
++    // Give navigation whatever is left of the budget (never below 5s).
++    const remainingMs = Math.max(5000, overallDeadline - Date.now());
++    const navBudgetMs = Math.min(Math.max(30000, Math.min(timeoutMs, 60000)), remainingMs);
++    page = await openPage(context, targetUrl, { waitMs: navBudgetMs });
+     log.debug('Page opened', { provider: providerId, url: page.url() });
+ 
+     const { answer, url, elapsedMs } = await provider.ask(page, prompt, {
+       timeoutMs,
+       stableMs: opts.stableMs,
+       pollMs: opts.pollMs,
++      deadline: overallDeadline,
++      // Never click "new chat" when we deliberately navigated into an existing
++      // thread — that would throw away the context we came back for.
++      newChat: resuming ? false : opts.newChat,
++      signal: abortController.signal,
++      attachments: opts.attachments,
+     });
+ 
+     if (!opts.noThrottle) recordSuccess(profileDir, providerId);
+ 
++    // Remember (or refresh) the conversation URL under its session name so the
++    // next run with the same --session lands back here.
++    if (opts.session) {
++      putChat(opts.session, { url: url || page.url(), provider: providerId });
++      log.info('Remembered conversation', { session: opts.session, url: url || page.url() });
++    }
++
+     const capped = answer.length > cfg.defaults.maxAnswerChars ? answer.slice(0, cfg.defaults.maxAnswerChars) : answer;
+     log.info('ask_web_ai success', { provider: providerId, chars: capped.length, elapsed: `${Math.round(elapsedMs / 1000)}s` });
+ 
+@@ -182,7 +253,7 @@
+     };
+ 
+     if (cfg.cache?.enabled !== false && !opts.noCache) {
+-      cachePut(profileDir, providerId, prompt, capped, meta);
++      cachePut(profileDir, providerId, prompt, capped, meta, opts.attachments);
+     }
+ 
+     return { status: 'success', provider: providerId, answer: capped, meta };
+@@ -204,6 +275,7 @@
+       meta: { startedAt, url: safeUrl(page), browser: activeBrowser?.id, ...(artifacts ? { artifacts } : {}) },
+     });
+   } finally {
++    clearTimeout(overallTimer);
+     if (page) await page.close().catch(() => {});
+     if (browser) await detach(browser);
+     log.debug('cleanup complete', { provider: providerId });
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/atomic.js free-web-ai-worker-patched/src/core/atomic.js
+--- free-web-ai-worker/src/core/atomic.js	1970-01-01 08:00:00.000000000 +0800
++++ free-web-ai-worker-patched/src/core/atomic.js	2026-09-24 09:16:28.896415100 +0800
+@@ -0,0 +1,41 @@
++/**
++ * Atomic file writes.
++ *
++ * Why: this tool is invoked as a short-lived process (each CLI call is a new
++ * process, and an agent may run several in parallel). Writing state with a
++ * plain writeFileSync can leave a half-written file behind if two writers
++ * overlap, which then fails to parse on the next read. Writing to a unique
++ * temp file in the same directory and renaming it over the target is atomic
++ * on both POSIX and Windows (Node's rename replaces the destination).
++ */
++
++import { mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
++import { dirname, join } from 'node:path';
++import { randomBytes } from 'node:crypto';
++
++/**
++ * Write `data` to `filePath` atomically.
++ * @param {string} filePath
++ * @param {string|Buffer} data
++ */
++export function writeFileAtomic(filePath, data) {
++  mkdirSync(dirname(filePath), { recursive: true });
++  const tmp = join(dirname(filePath), `.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
++  try {
++    writeFileSync(tmp, data);
++    renameSync(tmp, filePath);
++  } catch (err) {
++    // Clean up the temp file so a failure never leaves litter behind.
++    try {
++      rmSync(tmp, { force: true });
++    } catch {
++      /* ignore */
++    }
++    throw err;
++  }
++}
++
++/** Serialise `value` as pretty JSON and write it atomically. */
++export function writeJsonAtomic(filePath, value) {
++  writeFileAtomic(filePath, JSON.stringify(value, null, 2) + '\n');
++}
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/browser.js free-web-ai-worker-patched/src/core/browser.js
+--- free-web-ai-worker/src/core/browser.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/core/browser.js	2026-09-24 09:16:55.143856300 +0800
+@@ -17,13 +17,14 @@
+  */
+ 
+ import { spawn, spawnSync } from 'node:child_process';
+-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
++import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+ import { dirname, join } from 'node:path';
+ import { homedir } from 'node:os';
+ import { chromium } from 'playwright-core';
+ import { ErrorCodes, WebAIError } from './errors.js';
+ import { log, stopwatch } from './logger.js';
+-import { PROJECT_ROOT } from './config.js';
++import { userConfigPath } from './config.js';
++import { writeJsonAtomic } from './atomic.js';
+ 
+ const CDP_STATE_FILE = 'cdp-endpoint.json';
+ 
+@@ -162,6 +163,13 @@
+     ...localeArgs(),
+   ];
+   if (!config.browser.keepAlive) args.push('--no-startup-window');
++  if (config.browser.headless) {
++    // Now actually honoured (it used to be a dead option). Discouraged: several
++    // sites serve a bot check to a headless window, which this project reports
++    // as captcha_required rather than attempting to defeat. Visible is default.
++    args.push('--headless=new', '--disable-gpu');
++    log.warn('headless mode is ON — some sites will show a human-verification challenge. Prefer a visible window.');
++  }
+   args.push(url);
+ 
+   log.info(`Launching ${browser.label}`, { path: browser.path, port: config.browser.port, profileDir });
+@@ -177,30 +185,27 @@
+ 
+ function saveCdpState(profileDir, config, browser, version, pid) {
+   try {
+-    writeFileSync(
+-      join(profileDir, CDP_STATE_FILE),
+-      JSON.stringify(
+-        {
+-          port: config.browser.port,
+-          browserId: browser.id,
+-          browserLabel: browser.label,
+-          browserPath: browser.path,
+-          browserVersion: version?.Browser || null,
+-          pid: pid ?? null,
+-          savedAt: new Date().toISOString(),
+-        },
+-        null,
+-        2,
+-      ),
+-    );
++    writeJsonAtomic(join(profileDir, CDP_STATE_FILE), {
++      port: config.browser.port,
++      browserId: browser.id,
++      browserLabel: browser.label,
++      browserPath: browser.path,
++      browserVersion: version?.Browser || null,
++      pid: pid ?? null,
++      savedAt: new Date().toISOString(),
++    });
+   } catch (err) {
+     log.debug('Could not persist CDP state', { error: err.message });
+   }
+ }
+ 
+-/** Merge a patch into config/local.json so preferences survive restarts. */
++/**
++ * Merge a patch into the durable per-machine config (`~/.agent-web-ai/config.json`)
++ * so preferences survive restarts AND survive the package directory being
++ * replaced (which happens under `npx github:`).
++ */
+ export function writeLocalConfig(patch) {
+-  const file = join(PROJECT_ROOT, 'config', 'local.json');
++  const file = userConfigPath();
+   let existing = {};
+   try {
+     if (existsSync(file)) existing = JSON.parse(readFileSync(file, 'utf8'));
+@@ -214,8 +219,7 @@
+     }
+     return out;
+   };
+-  mkdirSync(dirname(file), { recursive: true });
+-  writeFileSync(file, JSON.stringify(merge(existing, patch), null, 2) + '\n');
++  writeJsonAtomic(file, merge(existing, patch));
+   return file;
+ }
+ 
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/cache.js free-web-ai-worker-patched/src/core/cache.js
+--- free-web-ai-worker/src/core/cache.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/core/cache.js	2026-09-24 09:35:47.966755400 +0800
+@@ -10,14 +10,29 @@
+  */
+ 
+ import { createHash } from 'node:crypto';
+-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
++import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+ import { join } from 'node:path';
+ import { log } from './logger.js';
++import { writeJsonAtomic } from './atomic.js';
+ 
+ const MAX_CACHE_FILES = 300;
+ 
+-export function cacheKey(providerId, prompt) {
+-  return createHash('sha256').update(`${providerId}\u0000${prompt}`).digest('hex').slice(0, 32);
++export function cacheKey(providerId, prompt, attachments) {
++  // Attachments are part of the identity: the same prompt with a different file
++  // must NOT return the previous (text-only) answer. Size+mtime makes the key
++  // change when the file changes too.
++  const att = (attachments || [])
++    .map((p) => {
++      try {
++        const s = statSync(p);
++        return `${p}:${s.size}:${Math.round(s.mtimeMs)}`;
++      } catch {
++        return String(p);
++      }
++    })
++    .sort()
++    .join('|');
++  return createHash('sha256').update(`${providerId}\u0000${prompt}\u0000${att}`).digest('hex').slice(0, 32);
+ }
+ 
+ function cacheDir(profileDir) {
+@@ -27,9 +42,9 @@
+ /**
+  * @returns {{answer:string, meta:object}|null}
+  */
+-export function cacheGet(profileDir, providerId, prompt, ttlSeconds) {
++export function cacheGet(profileDir, providerId, prompt, ttlSeconds, attachments) {
+   try {
+-    const file = join(cacheDir(profileDir), `${cacheKey(providerId, prompt)}.json`);
++    const file = join(cacheDir(profileDir), `${cacheKey(providerId, prompt, attachments)}.json`);
+     if (!existsSync(file)) return null;
+     const entry = JSON.parse(readFileSync(file, 'utf8'));
+     const ageSeconds = (Date.now() - entry.storedAt) / 1000;
+@@ -44,12 +59,12 @@
+   }
+ }
+ 
+-export function cachePut(profileDir, providerId, prompt, answer, meta) {
++export function cachePut(profileDir, providerId, prompt, answer, meta, attachments) {
+   try {
+     const dir = cacheDir(profileDir);
+-    mkdirSync(dir, { recursive: true });
+-    const file = join(dir, `${cacheKey(providerId, prompt)}.json`);
+-    writeFileSync(file, JSON.stringify({ provider: providerId, promptPreview: prompt.slice(0, 200), answer, meta, storedAt: Date.now() }, null, 2));
++    const file = join(dir, `${cacheKey(providerId, prompt, attachments)}.json`);
++    // Atomic write so a concurrent reader never sees a partially written entry.
++    writeJsonAtomic(file, { provider: providerId, promptPreview: prompt.slice(0, 200), answer, meta, storedAt: Date.now() });
+     pruneCache(dir);
+   } catch (err) {
+     log.debug('cache write failed', { error: err.message });
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/chats.js free-web-ai-worker-patched/src/core/chats.js
+--- free-web-ai-worker/src/core/chats.js	1970-01-01 08:00:00.000000000 +0800
++++ free-web-ai-worker-patched/src/core/chats.js	2026-09-24 10:09:58.772356100 +0800
+@@ -0,0 +1,84 @@
++/**
++ * A tiny per-machine registry of *named* web-AI conversations.
++ *
++ * Why this exists
++ * ---------------
++ * Every provider's home URL (e.g. https://chat.deepseek.com/) opens a BRAND NEW
++ * conversation when you navigate to it. So "continue the previous chat" is
++ * impossible unless you remember the conversation's own URL and navigate back
++ * to it. This module stores a friendly name -> { url, provider, updatedAt }
++ * mapping in `~/.agent-web-ai/chats.json` so an agent can:
++ *
++ *   - create + name a conversation once   (ask --session todo-html)
++ *   - resume it on every later run        (ask --session todo-html)
++ *   - rename / list / delete it           (ask-web-ai chats ...)
++ *
++ * The registry is deliberately independent of any single provider's UI so it
++ * keeps working even if a site renames its sidebar controls.
++ */
++
++import { readFileSync, existsSync } from 'node:fs';
++import { homedir } from 'node:os';
++import { join } from 'node:path';
++import { writeJsonAtomic } from './atomic.js';
++
++export function chatsPath() {
++  return join(homedir(), '.agent-web-ai', 'chats.json');
++}
++
++/** Read the whole registry as a plain object (never throws). */
++export function readAll() {
++  const p = chatsPath();
++  if (!existsSync(p)) return {};
++  try {
++    const data = JSON.parse(readFileSync(p, 'utf8'));
++    return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
++  } catch {
++    return {};
++  }
++}
++
++function writeAll(data) {
++  writeJsonAtomic(chatsPath(), data);
++}
++
++/** @returns {{url:string, provider?:string, title?:string, updatedAt?:string}|null} */
++export function getChat(name) {
++  if (!name) return null;
++  return readAll()[String(name)] || null;
++}
++
++/** Create or update an entry; returns the stored record. */
++export function putChat(name, patch) {
++  const all = readAll();
++  const prev = all[name] || {};
++  all[name] = { ...prev, ...patch, updatedAt: new Date().toISOString() };
++  writeAll(all);
++  return all[name];
++}
++
++/** @returns {boolean} whether an entry existed. */
++export function removeChat(name) {
++  const all = readAll();
++  const existed = Object.prototype.hasOwnProperty.call(all, name);
++  delete all[name];
++  writeAll(all);
++  return existed;
++}
++
++/** @returns {boolean} whether the old name existed. */
++export function renameChat(oldName, newName) {
++  const all = readAll();
++  if (!Object.prototype.hasOwnProperty.call(all, oldName)) return false;
++  all[newName] = { ...all[oldName], renamedFrom: oldName, updatedAt: new Date().toISOString() };
++  delete all[oldName];
++  writeAll(all);
++  return true;
++}
++
++/** All entries, oldest-updated first (stable, readable order). */
++export function listChats() {
++  return Object.entries(readAll())
++    .map(([name, v]) => ({ name, ...v }))
++    .sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')));
++}
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/config.js free-web-ai-worker-patched/src/core/config.js
+--- free-web-ai-worker/src/core/config.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/core/config.js	2026-09-24 09:16:45.450727200 +0800
+@@ -20,6 +20,18 @@
+ const HERE = dirname(fileURLToPath(import.meta.url));
+ export const PROJECT_ROOT = resolve(HERE, '..', '..');
+ 
++/**
++ * The durable, per-machine config file.
++ *
++ * It lives in the user's home rather than in the package directory on purpose:
++ * the README's primary run mode is `npx -y github:...`, where the package
++ * directory is an npm cache that can be replaced between runs — a preference
++ * written there (e.g. `browser --use chrome`) would silently disappear.
++ */
++export function userConfigPath() {
++  return join(homedir(), '.agent-web-ai', 'config.json');
++}
++
+ function deepMerge(base, patch) {
+   if (!patch || typeof patch !== 'object') return base;
+   const out = Array.isArray(base) ? [...base] : { ...base };
+@@ -81,8 +93,15 @@
+   if (!base) {
+     throw new WebAIError('config/default.json is missing', ErrorCodes.INTERNAL);
+   }
+-  const local = readJsonIfExists(join(PROJECT_ROOT, 'config', 'local.json')) || {};
+-  const merged = deepMerge(deepMerge(deepMerge(base, local), envOverrides()), overrides);
++  // Legacy in-package overrides. Still read for backwards compatibility, but
++  // deprecated: under `npx github:` this path is an npm cache.
++  const packagedLocal = readJsonIfExists(join(PROJECT_ROOT, 'config', 'local.json')) || {};
++  // Durable per-machine overrides in the user's home directory.
++  const userLocal = readJsonIfExists(userConfigPath()) || {};
++  const merged = deepMerge(
++    deepMerge(deepMerge(deepMerge(base, packagedLocal), userLocal), envOverrides()),
++    overrides,
++  );
+ 
+   // Normalise profile dir into an absolute path once, here.
+   if (merged.browser) {
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/errors.js free-web-ai-worker-patched/src/core/errors.js
+--- free-web-ai-worker/src/core/errors.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/core/errors.js	2026-09-24 09:32:15.060815700 +0800
+@@ -30,6 +30,8 @@
+   PROVIDER_DISABLED: 'provider_disabled',
+   /** Our own anti-abuse guard refused the call (interval / quota / breaker). */
+   RATE_LIMITED_LOCALLY: 'rate_limited_locally',
++  /** A file/attachment could not be handed to the site's composer. */
++  ATTACHMENT_FAILED: 'attachment_failed',
+   /** Anything else. */
+   INTERNAL: 'internal_error',
+ };
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/provider.js free-web-ai-worker-patched/src/core/provider.js
+--- free-web-ai-worker/src/core/provider.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/core/provider.js	2026-09-24 10:19:26.215100100 +0800
+@@ -17,6 +17,15 @@
+ import { ErrorCodes, WebAIError, toWebAIError } from './errors.js';
+ import { log, stopwatch } from './logger.js';
+ 
++/** page.url() that never throws (the page may already be closed). */
++function safePageUrl(page) {
++  try {
++    return page?.url ? page.url() : undefined;
++  } catch {
++    return undefined;
++  }
++}
++
+ export class WebAIProvider {
+   /**
+    * @param {string} id  provider key from config (e.g. 'gemini')
+@@ -218,13 +227,25 @@
+    *
+    * @param {import('playwright-core').Page} page
+    * @param {string} prompt
+-   * @param {{timeoutMs:number, stableMs:number, pollMs:number, newChat:boolean, signal:AbortSignal}} opts
++   * @param {{timeoutMs:number, stableMs:number, pollMs:number, newChat:boolean, signal:AbortSignal, attachments?:string[]}} opts
+    * @returns {Promise<{answer:string, url:string, elapsedMs:number}>}
+    */
+   async ask(page, prompt, opts) {
+-    const { timeoutMs, stableMs, pollMs } = opts;
++    const { timeoutMs, stableMs, pollMs, newChat, signal, attachments } = opts;
+     const sw = stopwatch();
+-    const deadline = Date.now() + timeoutMs;
++    // Use the caller's overall deadline when provided (askWebAI computes one so
++    // that browser launch + navigation + answer wait share a single budget);
++    // otherwise fall back to a local timeout for direct provider use.
++    const deadline = Number(opts.deadline) || Date.now() + timeoutMs;
++    const outOfBudget = (stage) => {
++      if (!signal?.aborted && Date.now() < deadline) return;
++      throw new WebAIError(
++        `${this.displayName}: the overall timeout (${Math.round(timeoutMs / 1000)}s) was reached during "${stage}". ` +
++          'Raise --timeout, or check the failure artifacts for the page state.',
++        ErrorCodes.TIMEOUT,
++        { provider: this.id, stage, url: safePageUrl(page) },
++      );
++    };
+ 
+     if (!(await this.isLoggedIn(page))) {
+       throw new WebAIError(
+@@ -234,6 +255,8 @@
+       );
+     }
+ 
++    outOfBudget('login check');
++
+     if (await this.detectAccessBlocked(page)) {
+       throw new WebAIError(
+         `${this.displayName} is refusing requests from this network right now (rate limit / abuse filter). ` +
+@@ -252,14 +275,34 @@
+       );
+     }
+ 
++    // Optionally start a fresh conversation so a previous thread cannot leak in.
++    if (newChat !== false) {
++      await this.startNewChat(page).catch(() => {});
++    }
++
+     const input = await this.findInput(page);
+     if (!input) {
+       throw new WebAIError(
+         `Could not find the prompt input on ${this.displayName}. The page layout may have changed.`,
+         ErrorCodes.SELECTORS_STALE,
+-        { provider: this.id, url: page.url() },
++        { provider: this.id, url: safePageUrl(page) },
+       );
+     }
++    outOfBudget('finding the input box');
++
++    // Hand any files to the composer before typing. Text-only providers simply
++    // declare no ATTACH selectors, in which case this is a no-op.
++    if (attachments?.length) {
++      const { attached } = await this.attachFiles(page, attachments);
++      if (!attached) {
++        throw new WebAIError(
++          `${this.displayName}: could not attach the file(s) — the site may expect a different attach control, or does not accept uploads. ` +
++            'See the failure artifacts for the page state.',
++          ErrorCodes.ATTACHMENT_FAILED,
++          { provider: this.id, url: safePageUrl(page), files: attachments.length },
++        );
++      }
++    }
+ 
+     const baseline = await this.captureBaseline(page);
+     log.debug('Submitting prompt', { provider: this.id, baseline, chars: prompt.length });
+@@ -270,7 +313,7 @@
+       throw toWebAIError(err, ErrorCodes.SUBMIT_FAILED);
+     }
+ 
+-    const answer = await this.waitForAnswer(page, { deadline, stableMs, pollMs, baseline });
++    const answer = await this.waitForAnswer(page, { deadline, stableMs, pollMs, baseline, signal });
+     const text = this.postProcess(answer);
+ 
+     if (!text) {
+@@ -285,9 +328,18 @@
+     return (text || '').trim();
+   }
+ 
+-  /** Snapshot state before submitting so we can detect the *new* answer. */
++  /**
++   * Snapshot state before submitting so we can detect the *new* answer.
++   *
++   * We record both the number of answer blocks AND the text of the latest one.
++   * The text matters when resuming an existing conversation: the previous
++   * answer is already rendered, so "the latest block is non-empty" is not a
++   * signal that our new answer has arrived.
++   */
+   async captureBaseline(page) {
+-    return { answerCount: await this.countAnswers(page) };
++    const answerCount = await this.countAnswers(page).catch(() => 0);
++    const lastText = await this.readLatestAnswer(page).catch(() => '');
++    return { answerCount, lastText: lastText || '' };
+   }
+ 
+   /**
+@@ -297,7 +349,7 @@
+    *   1. wait for a new answer block (count grows) OR the last block's text to change
+    *   2. require `stableMs` of no change AND no stop/streaming control visible
+    */
+-  async waitForAnswer(page, { deadline, stableMs, pollMs, baseline }) {
++  async waitForAnswer(page, { deadline, stableMs, pollMs, baseline, signal }) {
+     const waitStart = Date.now();
+     let lastText = '';
+     let stableSince = 0;
+@@ -315,7 +367,7 @@
+       return Math.round(base * factor);
+     };
+ 
+-    while (Date.now() < deadline) {
++    while (Date.now() < deadline && !signal?.aborted) {
+       if (polls++ === 0) log.info('Waiting for answer...', { provider: this.id });
+       await new Promise((r) => setTimeout(r, nextDelay()));
+ 
+@@ -325,7 +377,13 @@
+       const text = await this.readLatestAnswer(page);
+ 
+       const countGrew = count > (baseline?.answerCount ?? 0);
+-      if (countGrew || (text && text !== lastText)) sawNew = true;
++      // Comparing against the pre-submit baseline (not against the previous
++      // poll) is what makes resuming an existing conversation work: there the
++      // latest block already holds the *previous* answer, so a non-empty or
++      // changed-vs-last-poll text would otherwise be mistaken for our new answer
++      // and the stale text returned.
++      const textChangedFromBaseline = !!text && text !== (baseline?.lastText ?? '');
++      if (countGrew || textChangedFromBaseline) sawNew = true;
+       if (!sawNew) {
+         if (polls % 20 === 0) log.info('Still waiting for the answer to start...', { provider: this.id, waitedSeconds: Math.round((Date.now() - waitStart) / 1000) });
+         continue;
+@@ -351,32 +409,95 @@
+       return lastText;
+     }
+     throw new WebAIError(
+-      `${this.displayName} did not produce an answer before the deadline (${Math.round((Date.now() - waitStart) / 1000)}s elapsed). ` +
++      `${this.displayName} did not produce an answer before the deadline (${Math.round((Date.now() - waitStart) / 1000)}s elapsed` +
++        `${signal?.aborted ? ', call aborted' : ''}). ` +
+         'See the artifacts folder for a screenshot of the page state at the time of failure.',
+       ErrorCodes.TIMEOUT,
+-      { provider: this.id, url: page.url(), waitedSeconds: Math.round((Date.now() - waitStart) / 1000) },
++      { provider: this.id, url: safePageUrl(page), waitedSeconds: Math.round((Date.now() - waitStart) / 1000) },
+     );
+   }
+ 
+-  /** Type text into a contenteditable/textarea and submit. */
++  /**
++   * Type text into a contenteditable/textarea and submit — then VERIFY it left.
++   *
++   * Strategy, in order:
++   *   - <textarea> composers (DeepSeek, Qwen, …) submit on Enter, so press Enter
++   *     first. This avoids clicking a send button that may be the wrong control
++   *     (a resumed thread's page carries extra buttons: attach, mic, and even a
++   *     previous message's edit "发送/取消"), which silently sends nothing.
++   *   - contenteditable composers keep the button-first path, since Enter there
++   *     often inserts a newline instead of sending.
++   *   - Every attempt is confirmed by checking the composer actually cleared; if
++   *     it did not, the next method is tried.
++   */
+   async submit(page, prompt, input) {
+     await this.setInputText(page, input, prompt);
+ 
+-    const button = await this.findSendButton(page);
+-    if (button) {
++    // Verify the prompt really landed before sending. Without this, a partially
++    // typed prompt (editor quirk, focus loss, paste blocked) is sent as-is and
++    // the wrong answer looks like a valid one.
++    if (!(await this.inputHasText(input, prompt))) {
++      throw new WebAIError(
++        `${this.displayName}: the prompt did not appear in the composer, so nothing was sent. ` +
++          'The input element may behave differently than expected; see the failure artifacts.',
++        ErrorCodes.SUBMIT_FAILED,
++        { provider: this.id, url: safePageUrl(page) },
++      );
++    }
++
++    const pressEnter = async (waitMs) => {
++      await input.press('Enter').catch(() => {});
++      return this.awaitSent(input, prompt, waitMs);
++    };
++    const clickSend = async (waitMs) => {
+       // Chat SPAs enable the send button a tick after the framework sees input.
+-      // Clicking a still-disabled button just times out and looks like a hang,
+-      // so give it a moment and fall back to Enter when it never enables.
++      const button = await this.findSendButton(page, input);
++      if (!button) return false;
+       const enabled = await this.waitForEnabled(button, 6000);
+-      if (enabled) {
+-        await button.click({ timeout: 10000 });
+-        return;
++      if (!enabled) {
++        log.debug('Send button stayed disabled', { provider: this.id });
++        return false;
+       }
+-      log.debug('Send button stayed disabled; falling back to Enter key', { provider: this.id });
++      await button.click({ timeout: 10000 }).catch(() => {});
++      return this.awaitSent(input, prompt, waitMs);
++    };
++
++    const isTextarea = await input.evaluate((el) => el.tagName === 'TEXTAREA').catch(() => false);
++
++    let sent = false;
++    if (isTextarea) {
++      sent = await pressEnter(2500);
++      if (!sent) sent = await clickSend(2000);
++      if (!sent) sent = await pressEnter(2500);
+     } else {
+-      log.debug('No send button matched; falling back to Enter key', { provider: this.id });
++      sent = await clickSend(2000);
++      if (!sent) sent = await pressEnter(2500);
+     }
+-    await input.press('Enter');
++
++    if (!sent) {
++      log.warn('Could not confirm the composer cleared after submitting; still waiting for an answer', { provider: this.id });
++    }
++  }
++
++  /**
++   * Did the composer clear — i.e. did our message actually leave?
++   *
++   * Sites clear (or swap) the composer the moment a send is accepted, so a
++   * composer that no longer holds the start of our prompt is the most reliable
++   * "it was sent" signal we have without reading the message list.
++   */
++  async awaitSent(input, prompt, timeoutMs) {
++    const marker = String(prompt || '').replace(/\s+/g, '').slice(0, 24);
++    const deadline = Date.now() + timeoutMs;
++    do {
++      const now = await input
++        .evaluate((el) => (el.isContentEditable ? el.innerText : el.value) || '')
++        .catch(() => '');
++      const flat = String(now).replace(/\s+/g, '');
++      if (!flat || !flat.includes(marker)) return true;
++      await new Promise((r) => setTimeout(r, 200));
++    } while (Date.now() < deadline);
++    return false;
+   }
+ 
+   /** Wait until a control becomes clickable. Returns false instead of throwing. */
+@@ -455,22 +576,172 @@
+    */
+   async inputHasText(input, expected) {
+     try {
+-      const anyText = await input.evaluate((el) => (el.isContentEditable ? el.innerText : el.value) || '');
+-      if (!String(anyText).trim()) return false;
+-      const wanted = String(expected || '').trim();
++      const raw = await input.evaluate((el) => (el.isContentEditable ? el.innerText : el.value) || '');
++      const got = String(raw);
++      if (!got.trim()) return false;
++
++      const wanted = String(expected ?? '').trim();
+       if (!wanted) return true;
+-      // Compare on the first non-space chunk so leading/trailing normalisation
+-      // by the editor cannot fail the check.
+-      const prefix = wanted.slice(0, 20);
+-      return String(anyText).includes(prefix) || String(anyText).trim().length >= Math.min(wanted.length, 3);
++
++      // Editors reflow whitespace, so compare with whitespace removed.
++      const norm = (s) => s.replace(/\s+/g, '');
++      const a = norm(got);
++      const b = norm(wanted);
++      if (!a) return false;
++
++      // A short prompt must be present in full.
++      if (b.length <= 120) return a === b || a.includes(b);
++
++      // A long prompt: require BOTH ends to be present. This tolerates an editor
++      // that shows a collapsed view of the middle, while still catching a
++      // partially typed prompt (whose tail would be missing).
++      return a.includes(b.slice(0, 60)) && a.includes(b.slice(-40));
+     } catch {
+       return false;
+     }
+   }
+ 
+   /** Subclasses declare SEND_BUTTON selector lists. */
+-  async findSendButton(page) {
+-    return this.firstMatch(page, this.selectors.SEND_BUTTON || [], { timeout: 4000 });
++  async findSendButton(page, input) {
++    const selectors = this.selectors.SEND_BUTTON || [];
++    if (!selectors.length) return null;
++
++    // Prefer a send control INSIDE the composer (a close ancestor of the input).
++    // We take the LAST match in the row because attach / mic icons precede the
++    // send button, so "last" avoids grabbing the paperclip. This matters most on
++    // a resumed thread, whose page also carries a previous message's edit
++    // "发送 / 取消" buttons — the global search would otherwise hit those.
++    if (input) {
++      for (let level = 1; level <= 5; level++) {
++        let ancestor;
++        try {
++          ancestor = input.locator(`xpath=ancestor::*[${level}]`);
++          if ((await ancestor.count()) === 0) break;
++        } catch {
++          break;
++        }
++        for (const sel of selectors) {
++          try {
++            const cand = ancestor.locator(sel);
++            const n = await cand.count();
++            if (n > 0) return cand.nth(n - 1);
++          } catch {
++            /* try the next selector */
++          }
++        }
++      }
++    }
++    return this.firstMatch(page, selectors, { timeout: 4000 });
++  }
++
++  /**
++   * Start a fresh conversation.
++   *
++   * A new tab opened at the site root is already a new chat for most sites, but
++   * some SPAs restore the previous thread instead. When the site exposes an
++   * explicit "new chat" control (declared as NEW_CHAT selectors) we click it;
++   * otherwise we leave the page as opened. Kept to a single short lookup so it
++   * does not slow the common path.
++   *
++   * @returns {Promise<boolean>} true when a new-chat control was clicked
++   */
++  async startNewChat(page) {
++    const list = (this.selectors.NEW_CHAT || []).filter((s) => typeof s === 'string' && !s.startsWith('text='));
++    if (!list.length) return false;
++    try {
++      const el = page.locator(list.join(', ')).first();
++      await el.waitFor({ state: 'visible', timeout: 1200 });
++      await el.click({ timeout: 4000 });
++      await page.waitForTimeout(400);
++      log.debug('Started a new conversation', { provider: this.id });
++      return true;
++    } catch {
++      log.debug('No new-chat control found (or it was not clickable); using the page as opened', { provider: this.id });
++      return false;
++    }
++  }
++
++  /**
++   * Hand local files to the composer.
++   *
++   * Two-step, because sites differ: some keep a real `<input type="file">` in
++   * the DOM (often hidden), others only create it after the paperclip / "+"
++   * button is clicked. We try the input first, then the button.
++   *
++   * Playwright's setInputFiles drives the native file chooser, so this is the
++   * same path a human takes — no synthetic drops, no clickjacking.
++   *
++   * @param {import('playwright-core').Page} page
++   * @param {string[]} filePaths absolute paths
++   * @returns {Promise<{attached:number}>}
++   */
++  async attachFiles(page, filePaths) {
++    const files = (filePaths || []).filter(Boolean);
++    if (!files.length) return { attached: 0 };
++
++    const inputs = this.selectors.ATTACH_INPUT || ['input[type="file"]'];
++    const trySet = async () => {
++      for (const sel of inputs) {
++        try {
++          const loc = page.locator(sel).first();
++          if ((await loc.count()) === 0) continue;
++          await loc.setInputFiles(files, { timeout: 8000 });
++          return true;
++        } catch {
++          /* try the next candidate */
++        }
++      }
++      return false;
++    };
++
++    // A human clicks the paperclip first, and several SPAs only arm their file
++    // input once the attach control has been used. Try that order first, then
++    // fall back to a direct set for sites that keep the input live.
++    const button = await this.firstMatch(page, this.selectors.ATTACH_BUTTON || [], { timeout: 2000 });
++    let ok = false;
++    if (button) {
++      await button.click({ timeout: 5000 }).catch(() => {});
++      await page.waitForTimeout(700);
++      ok = await trySet();
++    }
++    if (!ok) ok = await trySet();
++    if (!ok) return { attached: 0 };
++
++    // Let the SPA process the file and render its preview before we submit.
++    await page.waitForTimeout(1500);
++
++    // A site can silently reject the upload — most often because the account is
++    // signed out: it resets the <input type=file> and renders no preview. The
++    // message would then go out with no attachment and we would return a bogus
++    // answer (observed on Qwen guest mode). Fail loudly instead.
++    if (!(await this.attachmentAccepted(page, files))) {
++      log.warn('The site did not show the attachment — it was likely rejected (signed out?).', { provider: this.id });
++      return { attached: 0 };
++    }
++
++    log.info('Attached files to the composer', { provider: this.id, files: files.length });
++    return { attached: files.length };
++  }
++
++  /**
++   * Heuristic: did the site actually take the file?
++   *
++   * True when a preview appeared (a blob:/data: image) or the file name is
++   * shown in the page. Errs towards "accepted" if the probe itself fails, so a
++   * DOM quirk can never block a site that otherwise works.
++   */
++  async attachmentAccepted(page, filePaths) {
++    const names = (filePaths || []).map((f) => String(f).split(/[\\/]/).pop()).filter(Boolean);
++    try {
++      return await page.evaluate((basenames) => {
++        const imgs = Array.from(document.querySelectorAll('img'));
++        if (imgs.some((i) => /^(blob|data):/.test(i.getAttribute('src') || ''))) return true;
++        const text = document.body ? document.body.innerText || '' : '';
++        return basenames.some((n) => n && text.includes(n));
++      }, names);
++    } catch {
++      return true;
++    }
+   }
+ }
+ 
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/core/throttle.js free-web-ai-worker-patched/src/core/throttle.js
+--- free-web-ai-worker/src/core/throttle.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/core/throttle.js	2026-09-24 09:16:39.198241000 +0800
+@@ -16,9 +16,10 @@
+  * This module never bypasses a provider limit. It only makes us quieter.
+  */
+ 
+-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
++import { existsSync, readFileSync } from 'node:fs';
+ import { join } from 'node:path';
+ import { log } from './logger.js';
++import { writeJsonAtomic } from './atomic.js';
+ 
+ const STATE_FILE = 'throttle.json';
+ 
+@@ -55,8 +56,8 @@
+ 
+ function writeState(profileDir, state) {
+   try {
+-    mkdirSync(profileDir, { recursive: true });
+-    writeFileSync(statePath(profileDir), JSON.stringify(state, null, 2));
++    // Atomic write: concurrent CLI processes must never read a half-written file.
++    writeJsonAtomic(statePath(profileDir), state);
+   } catch (err) {
+     log.debug('could not persist throttle state', { error: err.message });
+   }
+@@ -65,11 +66,14 @@
+ function entryFor(state, providerId) {
+   state.providers ||= {};
+   state.providers[providerId] ||= {
++    /** Timestamp of the last attempt (success OR failure) — drives interval spacing. */
+     lastCallAt: 0,
+-    callsToday: 0,
+-    windowStartedAt: 0,
+-    breakerUntil: 0,
++    /** Timestamps of *successful* calls in the last 24h — drives the daily quota. */
+     history: [],
++    /** Circuit-breaker deadline, set after a captcha/block. */
++    breakerUntil: 0,
++    /** Why the breaker last tripped (diagnostics only). */
++    lastBreakerReason: null,
+   };
+   return state.providers[providerId];
+ }
+@@ -146,7 +150,6 @@
+   pruneHistory(entry, now);
+   entry.lastCallAt = now;
+   entry.history.push(now);
+-  entry.windowStartedAt ||= now;
+   writeState(profileDir, state);
+ }
+ 
+@@ -164,14 +167,22 @@
+   log.warn(`Pausing calls to ${providerId} for ${cfg.breakerSeconds}s`, { reason: entry.lastBreakerReason });
+ }
+ 
+-/** Record a call that failed for an unrelated reason (timeout, stale selector). */
++/**
++ * Record a call that failed for an unrelated reason (timeout, stale selector,
++ * extraction failure).
++ *
++ * Only `lastCallAt` is updated, so the minimum-interval spacing still applies
++ * (we do not hammer a site that just failed), but the attempt is NOT added to
++ * `history`. A failure is not a call the site served, so it must not consume
++ * the daily quota — otherwise a handful of site hiccups would exhaust the
++ * day's budget and the guard would start refusing every real call.
++ */
+ export function recordAttempt(profileDir, providerId) {
+   const now = Date.now();
+   const state = readState(profileDir);
+   const entry = entryFor(state, providerId);
+   pruneHistory(entry, now);
+   entry.lastCallAt = now;
+-  entry.history.push(now);
+   writeState(profileDir, state);
+ }
+ 
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/mcp-server.js free-web-ai-worker-patched/src/mcp-server.js
+--- free-web-ai-worker/src/mcp-server.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/mcp-server.js	2026-09-24 09:32:53.070457900 +0800
+@@ -20,7 +20,10 @@
+ import pkg from '../package.json' with { type: 'json' };
+ 
+ const SERVER_INFO = { name: 'free-web-ai-worker', version: pkg.version };
+-const PROTOCOL_VERSION = '2024-11-05';
++/** Protocol versions this server knows how to speak. */
++const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
++/** Fallback when the client does not state a version. */
++const PROTOCOL_VERSION = '2025-06-18';
+ 
+ const ROUTE_TOOL = {
+   name: 'route_task',
+@@ -52,8 +55,13 @@
+       prompt: { type: 'string', description: 'Self-contained prompt. The web AI cannot see your conversation or files.' },
+       provider: { type: 'string', enum: knownProviderIds(), description: 'Which web AI to use (default from config).' },
+       timeout_ms: { type: 'integer', description: 'Overall timeout in milliseconds (default 120000).' },
++      attachments: {
++        type: 'array',
++        items: { type: 'string' },
++        description: 'Absolute paths of local files to attach (e.g. an image to transcribe). Only on providers whose site accepts uploads.',
++      },
+     },
+-    required: ['prompt'],
++    required: [],
+   },
+ };
+ 
+@@ -72,9 +80,14 @@
+ async function handle(msg) {
+   const { id, method, params } = msg;
+   switch (method) {
+-    case 'initialize':
+-      reply(id, { protocolVersion: PROTOCOL_VERSION, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
++    case 'initialize': {
++      // Echo the client's requested version when we support it. The old code
++      // hard-coded 2024-11-05, which newer MCP clients can fail to negotiate.
++      const requested = params?.protocolVersion;
++      const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSION;
++      reply(id, { protocolVersion, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
+       return;
++    }
+     case 'notifications/initialized':
+       return;
+     case 'tools/list':
+@@ -109,6 +122,7 @@
+           prompt: args.prompt,
+           provider: args.provider,
+           timeoutMs: args.timeout_ms,
++          attachments: args.attachments,
+           logLevel: process.env.AWA_LOG_LEVEL || 'info',
+         });
+         const text = result.status === 'success' ? result.answer : `ERROR (${result.code}): ${result.error}`;
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/providers/chatgpt.js free-web-ai-worker-patched/src/providers/chatgpt.js
+--- free-web-ai-worker/src/providers/chatgpt.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/providers/chatgpt.js	2026-09-24 09:33:02.401610400 +0800
+@@ -34,6 +34,19 @@
+     'button:has-text("Log in")',
+     'button:has-text("登录")',
+   ],
++  NEW_CHAT: [
++    '[data-testid="create-new-chat-button"]',
++    'a[aria-label*="New chat"]',
++    'button[aria-label*="New chat"]',
++    'a[href="/"]',
++  ],
++  ATTACH_INPUT: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
++  ATTACH_BUTTON: [
++    '[data-testid="composer-plus-btn"]',
++    'button[aria-label*="Attach"]',
++    'button[aria-label*="Upload"]',
++    'button[aria-label*="上传"]',
++  ],
+ };
+ 
+ export class ChatGPTProvider extends WebAIProvider {
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/providers/deepseek.js free-web-ai-worker-patched/src/providers/deepseek.js
+--- free-web-ai-worker/src/providers/deepseek.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/providers/deepseek.js	2026-09-24 10:19:29.841495500 +0800
+@@ -9,7 +9,17 @@
+ import { WebAIProvider } from '../core/provider.js';
+ 
+ const SELECTORS = {
+-  INPUT: ['textarea#chat-input', 'textarea[placeholder]', 'div[contenteditable="true"]', 'textarea'],
++  // Anchor on the composer's placeholder first: a conversation page also holds a
++  // hidden "edit message" textarea when a previous message is being edited, and
++  // the generic `textarea` fallback could otherwise target the wrong one.
++  INPUT: [
++    'textarea#chat-input',
++    'textarea[placeholder*="发送消息"]',
++    'textarea[placeholder*="DeepSeek"]',
++    'textarea[placeholder]',
++    'div[contenteditable="true"]',
++    'textarea',
++  ],
+   SEND_BUTTON: [
+     'div[role="button"][aria-disabled="false"]:has(svg)',
+     'button[aria-label*="发送"]',
+@@ -30,6 +40,14 @@
+   CAPTCHA: ['iframe[src*="recaptcha"]', 'iframe[title*="recaptcha" i]', 'iframe[src*="challenges.cloudflare.com"]', 'text=verify you are human', 'text=确认您是真人'],
+   LOGIN_URL: ['/sign_in', '/login', '/signin'],
+   LOGIN_WALL: ['button:has-text("登录")', 'a:has-text("Log in")', 'div[class*="login"]'],
++  NEW_CHAT: ['div[role="button"]:has-text("开启新对话")', 'button:has-text("新对话")', 'div[class*="new-chat"]', 'a[href="/"]'],
++  ATTACH_INPUT: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
++  ATTACH_BUTTON: [
++    'div[role="button"]:has-text("上传")',
++    'button[aria-label*="上传"]',
++    'button[aria-label*="附件"]',
++    'button[aria-label*="Upload"]',
++  ],
+ };
+ 
+ export class DeepSeekProvider extends WebAIProvider {
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/providers/duckai.js free-web-ai-worker-patched/src/providers/duckai.js
+--- free-web-ai-worker/src/providers/duckai.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/providers/duckai.js	2026-09-24 09:33:09.830218900 +0800
+@@ -53,6 +53,14 @@
+     'iframe[src*="captcha"]',
+     'iframe[title*="challenge"]',
+   ],
++  // Best-effort: Duck.ai resets to a new chat at the root URL, so the fallback
++  // (leave the page as opened) is the real path. Provided as a bonus.
++  NEW_CHAT: ['button[aria-label*="New chat"]', 'button:has-text("新对话")', 'a[href="/"]'],
++  // Duck.ai is a text-only chat: it has no attachment support. Declared empty
++  // so attachFiles() fails fast with a clear attachment_failed error rather
++  // than silently sending a prompt with no file.
++  ATTACH_INPUT: [],
++  ATTACH_BUTTON: [],
+ };
+ 
+ export class DuckAIProvider extends WebAIProvider {
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/providers/gemini.js free-web-ai-worker-patched/src/providers/gemini.js
+--- free-web-ai-worker/src/providers/gemini.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/providers/gemini.js	2026-09-24 09:33:02.480979300 +0800
+@@ -7,6 +7,7 @@
+  */
+ 
+ import { WebAIProvider } from '../core/provider.js';
++import { ErrorCodes, WebAIError } from '../core/errors.js';
+ 
+ const SELECTORS = {
+   INPUT: [
+@@ -43,6 +44,19 @@
+     'a[href*="accounts.google.com/ServiceLogin"]',
+     'a[href*="accounts.google.com/signin"]',
+   ],
++  NEW_CHAT: [
++    '[data-test-id="new-chat-button"]',
++    'button[aria-label*="New chat"]',
++    'button[aria-label*="新对话"]',
++    'a[href="/app"]',
++  ],
++  ATTACH_INPUT: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
++  ATTACH_BUTTON: [
++    'button[aria-label*="Upload"]',
++    'button[aria-label*="上传"]',
++    'button[aria-label*="添加文件"]',
++    'button[aria-label*="Add files"]',
++  ],
+ };
+ 
+ export class GeminiProvider extends WebAIProvider {
+@@ -81,6 +95,14 @@
+   async submit(page, prompt, input) {
+     await input.click({ timeout: 10000 });
+     await this.setInputText(page, input, prompt);
++    // Same guard as the base class: never send a partially typed prompt.
++    if (!(await this.inputHasText(input, prompt))) {
++      throw new WebAIError(
++        `${this.displayName}: the prompt did not appear in the composer, so nothing was sent.`,
++        ErrorCodes.SUBMIT_FAILED,
++        { provider: this.id, url: page.url() },
++      );
++    }
+     // Gemini renders its send button only after the editor has content.
+     await page.waitForTimeout(400);
+     const button = await this.findSendButton(page);
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/providers/grok.js free-web-ai-worker-patched/src/providers/grok.js
+--- free-web-ai-worker/src/providers/grok.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/providers/grok.js	2026-09-24 09:33:02.474882200 +0800
+@@ -25,6 +25,9 @@
+   ANSWER_COUNT: 'div[class*="response"]',
+   CAPTCHA: ['iframe[src*="recaptcha"]', 'iframe[title*="recaptcha" i]', 'iframe[src*="challenges.cloudflare.com"]', 'text=verify you are human', 'text=确认您是真人'],
+   LOGIN_WALL: ['button:has-text("Sign in")', 'button:has-text("登录")', 'a[href*="sign-in"]'],
++  NEW_CHAT: ['a[aria-label*="New"]', 'button[aria-label*="New"]', 'a[href="/"]'],
++  ATTACH_INPUT: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
++  ATTACH_BUTTON: ['button[aria-label*="Attach"]', 'button[aria-label*="Upload"]', 'button[aria-label*="上传"]'],
+ };
+ 
+ export class GrokProvider extends WebAIProvider {
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/src/providers/qwen.js free-web-ai-worker-patched/src/providers/qwen.js
+--- free-web-ai-worker/src/providers/qwen.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/src/providers/qwen.js	2026-09-24 09:33:02.367839800 +0800
+@@ -26,6 +26,15 @@
+   ANSWER_COUNT: 'div[class*="markdown"]',
+   CAPTCHA: ['iframe[src*="recaptcha"]', 'iframe[title*="recaptcha" i]', 'iframe[src*="challenges.cloudflare.com"]', 'text=verify you are human', 'text=确认您是真人'],
+   LOGIN_WALL: ['button:has-text("登录")', 'a:has-text("Log in")'],
++  NEW_CHAT: ['button[aria-label*="New Chat"]', 'button[aria-label*="新对话"]', 'button:has-text("新对话")', 'a[href="/"]'],
++  ATTACH_INPUT: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
++  ATTACH_BUTTON: [
++    'button[aria-label*="上传"]',
++    'button[aria-label*="附件"]',
++    'button[aria-label*="Upload"]',
++    'button[aria-label*="图片"]',
++    'button[aria-label*="image"]',
++  ],
+ };
+ 
+ export class QwenProvider extends WebAIProvider {
+diff -ruN '--exclude=node_modules' '--exclude=.git' free-web-ai-worker/tests/throttle.test.js free-web-ai-worker-patched/tests/throttle.test.js
+--- free-web-ai-worker/tests/throttle.test.js	2026-09-20 21:44:29.000000000 +0800
++++ free-web-ai-worker-patched/tests/throttle.test.js	2026-09-24 09:18:28.360685600 +0800
+@@ -96,12 +96,31 @@
+     const report = usageReport(dir, ['duckai', 'qwen', 'chatgpt'], DEFAULT_THROTTLE);
+     const byId = Object.fromEntries(report.map((r) => [r.provider, r]));
+     assert.equal(byId.duckai.usedToday, 1);
+-    assert.equal(byId.qwen.usedToday, 1);
++    // A failed attempt is spaced but must NOT consume the daily quota.
++    assert.equal(byId.qwen.usedToday, 0);
++    assert.ok(byId.qwen.secondsSinceLastCall !== null, 'a failure still updates lastCallAt');
+     assert.equal(byId.chatgpt.usedToday, 0);
+     assert.ok(byId.duckai.secondsSinceLastCall !== null);
+   } finally {
+     rmSync(dir, { recursive: true, force: true });
+   }
++});
++
++test('throttle: a failed attempt does not consume the daily quota but is still spaced', () => {
++  const dir = freshDir();
++  try {
++    const cfg = { ...DEFAULT_THROTTLE, dailyQuota: 2, jitterSeconds: 0 };
++    // Two failures must not use up the quota...
++    recordAttempt(dir, 'duckai');
++    recordAttempt(dir, 'duckai');
++    const r = checkAllowed(dir, 'duckai', cfg);
++    assert.equal(r.allowed, true, 'failures must not exhaust the daily quota');
++    assert.equal(r.remainingToday, 2);
++    // ...but they DO still impose the minimum interval before the next call.
++    assert.ok(r.waitMs > 0, 'a failure should still space the next call');
++  } finally {
++    rmSync(dir, { recursive: true, force: true });
++  }
+ });
+ 
+ test('cache: identical prompt returns the stored answer', () => {

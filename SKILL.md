@@ -101,6 +101,26 @@ python scripts/apply_patch.py 返回.json 目标.html [输出.html]
 - 不达标 → 把**具体差在哪 + 期望**压成一两句，同一 `--session` 发回去，循环。
 - 达标 → `cp 目标 目标.vN` 留版本，再交付。
 
+## 看板：站点登录态 / 历史对话 / 调用流水
+
+用户问「哪些 AI 站点登录了、之前聊过什么、调用过几次」时，用看板一次说清，别靠回忆：
+
+```bash
+cd <你的产出目录>
+python <skill>/scripts/dashboard/collect.py --tasks .   # 扫描本机 -> data.json
+python <skill>/scripts/dashboard/render.py              # -> dashboard.html + checklist.md
+```
+
+四个页签：**站点与登录态**（Cookie / localStorage 凭据判定，带证据与配额条）、
+**历史对话**（标题、会话名、首末访问、调用次数、答案字数，可展开看该对话的每次调用）、
+**调用流水**（时间线 + 提示词原文 + 耗时 + 成功失败）、**本地产出**（版本备份）。
+
+要点：
+- 数据源全是**本机只读扫描**：浏览器 profile 的 Cookie / localStorage / History、`chats.json` 会话登记簿、`throttle.json` 配额、CLI 输出的 meta。
+- **登录凭据只记录长度与指纹，不落明文**，所以看板可以放心传阅。
+- 浏览器 / 工具 / 产出目录都自动探测，也可用 `--awa` `--tool` `--tasks` 或环境变量 `AWA_HOME` / `AWA_TOOL` / `AWA_TASKS` 指定。
+- 生成的 `data.json` / `dashboard.html` / `checklist.md` 含本机路径，**不要提交到公开仓库**（已在 .gitignore 里）。
+
 ## 已知坑：网页 AI 的代码渲染
 
 - 用**代码块**包裹能保住**缩进和反引号**；纯文本返回会**压平缩进、吃掉反引号**（例如模板字符串的反引号丢失会直接变成语法错误）。
