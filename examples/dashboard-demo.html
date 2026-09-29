@@ -31,13 +31,22 @@ button,select,input{font:inherit;color:inherit}
 .btn{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:7px 12px;cursor:pointer;box-shadow:var(--shadow)}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
 .btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-#q{min-width:220px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:7px 12px}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#q{flex:0 1 240px;min-width:170px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:7px 12px}
+.ops{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.opgroup{display:inline-flex;gap:4px;align-items:center;padding:4px;border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}
+.opgroup .btn,.opgroup .autosw{border-color:transparent;box-shadow:none;background:transparent}
+.opgroup .btn:hover{border-color:var(--border);background:var(--panel-2);color:var(--accent)}
+.opgroup .autosw:hover{background:var(--panel-2)}
+.opgroup .autosw.on{background:var(--accent-soft)}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:20px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:20px}
+@media (max-width:820px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .stat{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
 .stat .n{font-size:26px;font-weight:650;letter-spacing:-.5px}
 .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+.stat.accent{border-color:var(--accent);background:var(--accent-soft)}
+.stat.accent .n{color:var(--accent)}
 
 .tabs{display:flex;gap:6px;border-bottom:1px solid var(--border);margin:22px 0 18px;overflow:auto}
 .tab{padding:9px 14px;border-radius:10px 10px 0 0;border:1px solid transparent;cursor:pointer;white-space:nowrap;color:var(--text-2)}
@@ -90,6 +99,15 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
 .note h4{margin:0 0 8px;color:var(--text);font-size:14px}
 .note code{background:var(--gray-soft);padding:1px 6px;border-radius:6px;font-size:12px}
 .empty{padding:28px;text-align:center;color:var(--muted);background:var(--panel);border:1px dashed var(--border);border-radius:var(--radius)}
+.qedit{cursor:pointer;border-bottom:1px dashed var(--accent);color:var(--accent);padding:0 3px;border-radius:4px}
+.qedit:hover{background:var(--accent-soft)}
+.live{font-size:11.5px;padding:3px 9px;border-radius:999px;font-weight:600;white-space:nowrap;background:var(--gray-soft);color:var(--text-2)}
+.live.on{background:var(--ok-soft);color:var(--ok)}
+.live.off{background:var(--warn-soft);color:var(--warn)}
+.autosw{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;cursor:pointer;font-size:13px;white-space:nowrap;box-shadow:var(--shadow)}
+.autosw:hover{border-color:var(--accent);color:var(--accent)}
+.autosw.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.autosw input{accent-color:var(--accent);cursor:pointer;margin:0}
 </style>
 </head>
 <body>
@@ -101,7 +119,18 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
     </div>
     <div class="toolbar">
       <input id="q" placeholder="搜索：站点 / 对话标题 / 提示词">
-      <button class="btn" id="themeBtn">深色</button>
+      <div class="ops">
+        <span class="live" id="liveBadge">离线快照</span>
+        <div class="opgroup">
+          <button class="btn" id="refreshBtn" title="从数据库重新取数并重画页面（毫秒级）">刷新页面</button>
+          <label class="autosw" title="每 30 秒自动刷新一次页面"><input type="checkbox" id="autoRefresh">自动 30s</label>
+        </div>
+        <div class="opgroup">
+          <button class="btn" id="scanBtn" title="扫描 Edge profile 的 Cookie / 登录态 / 浏览历史，增量入库（约 1-2 秒）">重新扫描浏览器 profile</button>
+          <label class="autosw" title="每 5 分钟自动扫描一次浏览器 profile"><input type="checkbox" id="autoScan">自动 5min</label>
+        </div>
+        <button class="btn" id="themeBtn">深色</button>
+      </div>
     </div>
   </header>
 
@@ -162,30 +191,37 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
   function fmtBytes(n){ n=+n||0; return n>1024*1024 ? (n/1048576).toFixed(1)+' MB' : (n/1024).toFixed(1)+' KB'; }
   function short(s,n){ s=String(s||''); return s.length>n? s.slice(0,n)+'…' : s; }
 
-  /* ---------- 概览 ---------- */
-  var T = D.totals;
-  var demoTag = D.demo ? '<span class="badge b-warn">示例数据 · 全部虚构</span> ' : '';
-  document.getElementById('metaLine').innerHTML = demoTag +
-    '数据截至 <b>' + esc(D.generatedAt) + '</b> · 浏览器 profile <code>' +
-    esc(D.sources.profile) + '</code> · 调用共计 <b>' + T.calls + '</b> 次';
-  function statCard(n,l){ return '<div class="stat"><div class="n">'+esc(n)+'</div><div class="l">'+esc(l)+'</div></div>'; }
-  document.getElementById('stats').innerHTML = [
-    statCard(T.sitesUsed+' / '+T.sites, '站点：用过 / 支持'),
-    statCard(T.signedIn, '已登录站点'),
-    statCard(T.conversations, '历史对话'),
-    statCard(T.sessions, '已命名会话'),
-    statCard(T.okCalls+' / '+T.calls, '调用：成功 / 总数'),
-    statCard((T.answerChars/10000).toFixed(1)+' 万字', '累计取回答案'),
-    statCard(T.avgSec+' s', '平均单次耗时')
-  ].join('');
+  /* ---------- 概览（每次刷新都要重画） ---------- */
+  function updateMeta(){
+    var T = D.totals, DB = D.db || {};
+    var demoTag = D.demo ? '<span class="badge b-warn">示例数据 · 全部虚构</span> ' : '';
+    document.getElementById('metaLine').innerHTML = demoTag +
+      '渲染于 <b>' + esc(D.generatedAt) + '</b> · 数据源 <code>' + esc(DB.path || 'data.json') + '</code>' +
+      (DB.lastCallAt ? ' · 最后一次外包调用 <b>' + esc(DB.lastCallAt) + '</b>' : '') +
+      (DB.lastScanAt ? ' · 最后扫描 ' + esc(DB.lastScanAt) : '') +
+      ' · 调用共计 <b>' + T.calls + '</b> 次';
+    document.getElementById('stats').innerHTML = [
+      statCard(T.todayCalls||0, '今日调用', 'accent'),
+      statCard(T.sitesUsed+' / '+T.sites, '站点：用过 / 支持'),
+      statCard(T.signedIn, '已登录站点'),
+      statCard(T.conversations, '历史对话'),
+      statCard(T.sessions, '已命名会话'),
+      statCard(T.okCalls+' / '+T.calls, '调用：成功 / 总数'),
+      statCard((T.answerChars/10000).toFixed(1)+' 万字', '累计取回答案'),
+      statCard(T.avgSec+' s', '平均单次耗时')
+    ].join('');
+  }
+  function statCard(n,l,cls){ return '<div class="stat'+(cls?' '+cls:'')+'"><div class="n">'+esc(n)+'</div><div class="l">'+esc(l)+'</div></div>'; }
 
   /* ---------- 站点 ---------- */
   function quotaBar(pid){
     var q = D.quota.filter(function(x){return x.provider===pid;})[0];
     if(!q) return '';
     var pct = Math.min(100, Math.round(q.calls/q.dailyQuota*100));
-    return '<div class="row"><span class="k">今日配额</span><span>'+q.calls+' / '+q.dailyQuota+'</span></div>'+
-           '<div class="bar"><i style="width:'+pct+'%"></i></div>';
+    return '<div class="row"><span class="k">今日配额</span>'+
+           '<span><b>'+q.calls+'</b> / <span class="qedit" data-provider="'+esc(pid)+'" title="点击可改每日上限">'+q.dailyQuota+'</span></span></div>'+
+           '<div class="bar"><i style="width:'+pct+'%"></i></div>'+
+           (q.totalCalls>q.calls ? '<div class="row"><span class="k">历史累计</span><span>'+q.totalCalls+' 次</span></div>' : '');
   }
   function siteCard(p){
     return '<div class="card" data-search="'+esc((p.name+' '+p.url+' '+statLabel(p.loginState)).toLowerCase())+'">'+
@@ -194,9 +230,10 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
       '<div class="host">'+esc(p.url)+'</div>'+
       '<div style="margin-top:10px">'+
         '<div class="row"><span class="k">历史对话</span><span>'+p.conversations+'</span></div>'+
-        '<div class="row"><span class="k">外包调用</span><span>'+p.calls+'</span></div>'+
+        '<div class="row"><span class="k">外包调用</span><span>'+p.calls+(p.todayCalls?'（今日 '+p.todayCalls+'）':'')+'</span></div>'+
         '<div class="row"><span class="k">页面访问</span><span>'+p.visits+' 次</span></div>'+
-        '<div class="row"><span class="k">最近活动</span><span>'+esc(p.lastVisit||'—')+'</span></div>'+
+        '<div class="row"><span class="k">最近活动</span><span>'+esc(p.lastVisit||'—')+
+          (p.lastVisitSource?' <span class="badge b-gray">'+esc(p.lastVisitSource)+'</span>':'')+'</span></div>'+
         quotaBar(p.id)+
       '</div>'+
       '<ul class="ev">'+ p.evidence.map(function(e){return '<li>'+esc(e)+'</li>';}).join('') +'</ul>'+
@@ -235,6 +272,10 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
     if(x.answerHead) lines.push('— 答案开头 —\n'+x.answerHead);
     if(x.error) lines.push('— 错误 —\n'+x.error);
     var det = lines.length ? '<details><summary>提示词 / 返回内容</summary><pre class="prm">'+esc(lines.join('\n\n'))+'</pre></details>' : '';
+    if(x.shot){
+      det += '<div style="margin-top:6px"><a href="'+esc(x.shot)+'" target="_blank" rel="noopener">'+
+             '查看失败现场截图</a> <span class="sub" style="margin:0">（调用出错时自动抓的浏览器画面）</span></div>';
+    }
     return '<div class="it'+(x.status==='success'?'':' err')+'" data-search="'+esc(((x.id||'')+' '+(x.prompt||'')+' '+convTitle(x.chatUrl)).toLowerCase())+'">'+
       '<div class="hd"><span class="t">'+esc(x.id)+' · '+esc(convTitle(x.chatUrl))+'</span>'+
       '<span class="meta">'+esc(x.startedAt||'')+'</span></div>'+
@@ -250,6 +291,60 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
       '<div style="font-size:13px;color:var(--text-2);margin-top:6px">'+esc(short(x.prompt? x.prompt.replace(/\s+/g,' ') : (x.error||''),150))+'</div>'+
       det+
     '</div>';
+  }
+
+  /* ---------- 数据来源：优先本地服务（可刷新 / 可改配额），失败回退内嵌快照 ---------- */
+  var LIVE = false, timerRefresh = null, timerScan = null;
+  function setStatus(txt, cls){
+    var el = document.getElementById('liveBadge');
+    el.textContent = txt;
+    el.className = 'live' + (cls ? ' ' + cls : '');
+  }
+  function applyQuotaOverride(){
+    var o = {};
+    try{ o = JSON.parse(localStorage.getItem('wa-quota')||'{}'); }catch(e){}
+    Object.keys(o).forEach(function(k){
+      D.quota.forEach(function(q){ if(q.provider===k) q.dailyQuota = o[k]; });
+    });
+  }
+  function applyData(d){
+    D = d;
+    applyQuotaOverride();
+    render();
+    updateMeta();
+  }
+  function refresh(manual){
+    return fetch('api/data', {cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(d){
+        LIVE = true;
+        applyData(d);
+        setStatus('实时 · ' + String(d.generatedAt||'').slice(11), 'on');
+      })
+      .catch(function(){
+        LIVE = false;
+        setStatus(manual ? '离线快照（用 serve.py 打开才能刷新）' : '离线快照', 'off');
+      });
+  }
+  function saveQuota(pid, val){
+    if(LIVE){
+      fetch('api/quota', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({provider: pid, dailyQuota: val})})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if(j.ok){ setStatus('配额已写入数据库', 'on'); refresh(false); }
+          else{ alert('保存失败：' + (j.error||'未知错误')); }
+        })
+        .catch(function(){ alert('保存失败：服务未响应'); });
+    }else{
+      var o = {};
+      try{ o = JSON.parse(localStorage.getItem('wa-quota')||'{}'); }catch(e){}
+      o[pid] = val;
+      try{ localStorage.setItem('wa-quota', JSON.stringify(o)); }catch(e){}
+      applyQuotaOverride();
+      render(); updateMeta();
+      setStatus('离线模式：配额只存在本浏览器', 'off');
+    }
   }
 
   var state = {tab:'sites', q:''};
@@ -304,17 +399,79 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
   try{ var t0=localStorage.getItem('wa-dash-theme'); if(t0){ document.documentElement.setAttribute('data-theme',t0);
     document.getElementById('themeBtn').textContent = t0==='dark'?'浅色':'深色'; } }catch(e){}
 
-  document.getElementById('srcNote').innerHTML =
-    '<h4>数据是怎么来的（全部本机只读扫描）</h4>'+
-    '站点清单取自工具配置 <code>'+esc(D.sources.tool)+'\\config\\default.json</code>；'+
-    '登录态依据是同一个浏览器 profile 里的 Cookie / localStorage 凭据；'+
-    '历史对话与标题取自 Edge profile 的浏览历史；'+
-    '会话名取自 <code>~/.agent-web-ai/chats.json</code>（外包 skill 的 <code>--session</code> 登记簿）；'+
-    '调用流水取自 CLI 输出 JSON 的 meta 字段（含对话 URL、耗时、字数）并与本地提示词文本配对。'+
-    '<br>刷新方式：在本目录执行 <code>python collect.py</code> 再 <code>python render.py</code>。'+
-    '本页完全离线，不含任何脚本外链，也不会上传数据。';
+  /* ---------- 刷新页面 / 重新扫描浏览器 profile / 改配额 ---------- */
+  var SCAN_LABEL = '重新扫描浏览器 profile';
+  function doScan(silent){
+    var btn = document.getElementById('scanBtn');
+    btn.disabled = true; btn.textContent = '扫描浏览器中…';
+    setStatus('正在扫描浏览器 profile…');
+    return fetch('api/scan').then(function(r){ return r.json(); }).then(function(j){
+      btn.disabled = false; btn.textContent = SCAN_LABEL;
+      if(j.ok){
+        setStatus('扫描完成 · 已增量入库', 'on');
+        return refresh(false);
+      }
+      if(!silent) alert('扫描失败：' + (j.error || (j.output||[]).join(' ')));
+      setStatus('扫描失败（看服务是否在跑）', 'off');
+    }).catch(function(){
+      btn.disabled = false; btn.textContent = SCAN_LABEL;
+      if(!silent) setStatus('离线快照（用 serve.py 打开才能扫描）', 'off');
+    });
+  }
+  document.getElementById('refreshBtn').addEventListener('click', function(){
+    setStatus('刷新中…');
+    refresh(true);
+  });
+  document.getElementById('autoRefresh').addEventListener('change', function(){
+    var on = this.checked;
+    this.parentNode.classList.toggle('on', on);
+    if(timerRefresh){ clearInterval(timerRefresh); timerRefresh = null; }
+    if(on){
+      refresh(false);
+      timerRefresh = setInterval(function(){ refresh(false); }, 30000);
+    }
+  });
+  document.getElementById('autoScan').addEventListener('change', function(){
+    var on = this.checked;
+    this.parentNode.classList.toggle('on', on);
+    if(timerScan){ clearInterval(timerScan); timerScan = null; }
+    if(on){
+      doScan(true);
+      timerScan = setInterval(function(){ doScan(true); }, 300000);
+    }
+  });
+  document.getElementById('scanBtn').addEventListener('click', function(){ doScan(false); });
+  document.addEventListener('click', function(e){
+    var el = (e.target && e.target.closest) ? e.target.closest('.qedit') : null;
+    if(!el) return;
+    var pid = el.getAttribute('data-provider');
+    var v = prompt('设置「' + pid + '」的每日配额上限：', el.textContent.trim());
+    if(v === null) return;
+    v = parseInt(v, 10);
+    if(!v || v < 1){ alert('请输入大于 0 的整数'); return; }
+    saveQuota(pid, v);
+  });
 
+  document.getElementById('srcNote').innerHTML =
+    '<h4>数据是怎么来的（本地 SQLite 持久库 + 只读扫描）</h4>'+
+    '所有记录都存在同目录的 <code>web-ai.db</code>（SQLite）里，本页只负责读取渲染，<b>不再每次重扫</b>。'+
+    '<br>· <b>实时</b>：每次外包调用由 <code>askw.py</code> 当场写一条调用流水（站点、会话名、耗时、字数、对话 URL）。'+
+    '<br>· <b>慢变</b>：站点清单取自工具配置 <code>'+esc(D.sources.tool)+'\\config\\default.json</code>；'+
+    '登录态依据 profile 里的 Cookie / localStorage 凭据；历史对话与标题取自 Edge 浏览历史；'+
+    '会话名取自 <code>~/.agent-web-ai/chats.json</code>。这些由 <code>collect.py --to-db</code> 增量补全，只增不改。'+
+    '<br>· <b>今日配额</b>：按当天实际调用数实时统计（历史调用不计入今日）；点配额数字即可改每日上限。'+
+    '<br><br><b>怎么让按钮生效</b>：直接双击本文件打开是离线快照，没有数据可拉。'+
+    '要「刷新页面」「重新扫描浏览器 profile」、自动刷新、页面内改配额，用 <code>python serve.py</code> 启动本地服务后从 '+
+    '<code>http://127.0.0.1:8787/dashboard.html</code> 打开。'+
+    '<br>· <b>刷新页面</b>：只读数据库重画（毫秒级），能看到新入库的外包调用与配额改动。'+
+    '<br>· <b>重新扫描浏览器 profile</b>：读 Edge 的 Cookie / 登录态 / 浏览历史并增量入库（约 1-2 秒），'+
+    '浏览器里的登录变化、新对话、访问次数靠它更新。'+
+    '本页完全离线，不含任何脚本外链，也不会上传数据；服务只监听本机。';
+
+  applyQuotaOverride();
+  updateMeta();
   render();
+  refresh(false);
 })();
 </script>
 </body>

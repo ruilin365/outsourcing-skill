@@ -79,25 +79,46 @@ def resolve_profile(awa):
 
 
 def resolve_tool(cli):
+    """工具目录。修复：原来只看 cwd/.tools 与 dirname(cwd)，漏了祖先目录下的
+    .tools/，在产出目录里直接跑会找不到工具、静默降级成 sites=0。"""
     if cli:
         return cli
     if os.environ.get("AWA_TOOL"):
         return os.environ["AWA_TOOL"]
-    cwd = os.getcwd()
     home = os.path.expanduser("~")
-    roots = [os.path.join(home, ".tools"), os.path.join(home, "tools"),
-             os.path.join(cwd, ".tools"), cwd, os.path.dirname(cwd)]
+    roots, seen = [], set()
+
+    def add(p):
+        if p and p not in seen:
+            seen.add(p)
+            roots.append(p)
+
+    add(os.path.join(home, ".tools"))
+    add(os.path.join(home, "tools"))
+    d = os.getcwd()
+    for _ in range(5):
+        add(os.path.join(d, ".tools"))
+        add(d)
+        up = os.path.dirname(d)
+        if up == d:
+            break
+        d = up
     for r in roots:
         if not os.path.isdir(r):
             continue
-        for cand in sorted(glob.glob(os.path.join(r, "free-web-ai-worker*"))):
+        for cand in sorted(glob.glob(os.path.join(r, "free-web-ai-worker*")), reverse=True):
             if os.path.exists(os.path.join(cand, "config", "default.json")):
                 return cand
     return None
 
 
 def resolve_tasks(cli):
+    """外包产出目录，支持逗号分隔多个目录（历史任务散在多个目录里）。"""
     return cli or os.environ.get("AWA_TASKS") or os.getcwd()
+
+
+def split_dirs(value):
+    return [t.strip() for t in str(value or "").split(",") if t.strip()]
 
 
 def load_json(path, default=None):
@@ -374,7 +395,8 @@ def load_outputs(tasks):
     for f in sorted(os.listdir(tasks)):
         if f.endswith(".html"):
             full = os.path.join(tasks, f)
-            out.append({"file": f, "size": os.path.getsize(full), "mtime": iso(mtime(full))})
+            out.append({"dir": tasks, "file": f, "size": os.path.getsize(full),
+                        "mtime": iso(mtime(full))})
     return out
 
 
@@ -384,7 +406,8 @@ def load_task_notes(tasks):
     for f, label in [("gen_result.txt", "整文件生成 v1"), ("mod_result.txt", "整文件改版 v2")]:
         full = os.path.join(tasks, f)
         if os.path.exists(full):
-            items.append({"file": f, "note": label, "size": os.path.getsize(full), "mtime": iso(mtime(full))})
+            items.append({"dir": tasks, "file": f, "note": label,
+                          "size": os.path.getsize(full), "mtime": iso(mtime(full))})
     return items
 
 
@@ -420,7 +443,8 @@ def build(args):
     awa = resolve_awa(args.awa)
     browser, profile = resolve_profile(awa)
     tool = resolve_tool(args.tool)
-    tasks = resolve_tasks(args.tasks)
+    task_dirs = split_dirs(resolve_tasks(args.tasks))
+    tasks = ",".join(task_dirs)
     if not profile:
         sys.exit("未找到浏览器 profile：%s/profiles/<browser>/Default —— 用 --awa 指定数据目录" % awa)
 
@@ -430,9 +454,18 @@ def build(args):
     convs, visits = load_history(profile)
     chats = load_chats(awa)
     throttle = load_throttle(awa, browser)
-    calls = load_calls(tasks)
-    outputs = load_outputs(tasks)
-    notes = load_task_notes(tasks)
+    calls, outputs, notes = [], [], []
+    for td in task_dirs:
+        calls += load_calls(td)
+        outputs += load_outputs(td)
+        notes += load_task_notes(td)
+    seen_calls, uniq = set(), []
+    for c in calls:
+        k = (c["id"], c["startedAt"])
+        if k not in seen_calls:
+            seen_calls.add(k)
+            uniq.append(c)
+    calls = uniq
 
     url2session = {}
     for name, info in chats.items():
@@ -442,6 +475,7 @@ def build(args):
 
     call_stat = {}
     for c in calls:
+        c["session"] = (url2session.get(c.get("chatUrl") or "") or {}).get("name")
         s = call_stat.setdefault(c.get("chatUrl") or "", {"n": 0, "ok": 0, "chars": 0, "ms": 0})
         s["n"] += 1
         if c["status"] == "success":
@@ -543,12 +577,38 @@ def build(args):
     }
 
 
+def write_db(data, db_path=None):
+    """把本次扫描结果**增量**写进 SQLite 库（不覆盖历史，只补全 / 更新）。"""
+    import store
+    con = store.connect(db_path)
+    n = {
+        "providers": store.upsert_providers(con, data["providers"]),
+        "conversations": store.upsert_conversations(con, data["conversations"]),
+        "sessions": store.upsert_sessions(con, data["sessions"]),
+        "calls": store.upsert_calls(con, data["calls"]),
+        "artifacts": store.upsert_artifacts(con, data["outputs"], data["notes"]),
+        "quota": store.upsert_quota(con, data["quota"]),
+    }
+    store.set_meta(con, "last_scan_at", data["generatedAt"])
+    stamps = [c["startedAt"] for c in data["calls"] if c.get("startedAt")]
+    if stamps:
+        cur = store.get_meta(con, "last_call_at") or ""
+        store.set_meta(con, "last_call_at", max(max(stamps), cur))
+    for k in ("profile", "tool", "tasks"):
+        store.set_meta(con, k, (data.get("sources") or {}).get(k, ""))
+    con.commit()
+    con.close()
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser(description="扫描本机 web-AI 站点登录态 / 历史对话 / 调用记录")
     ap.add_argument("--out", help="输出 data.json 路径（默认当前目录 data.json）")
     ap.add_argument("--awa", help="~/.agent-web-ai 等价的数据目录（环境变量 AWA_HOME）")
     ap.add_argument("--tool", help="ask-web-ai 工具目录（含 config/default.json，环境变量 AWA_TOOL）")
-    ap.add_argument("--tasks", help="外包产出目录（保存 CLI 输出 JSON / 提示词 / html，环境变量 AWA_TASKS）")
+    ap.add_argument("--tasks", help="外包产出目录，可逗号分隔多个（环境变量 AWA_TASKS）")
+    ap.add_argument("--to-db", action="store_true", help="把结果增量写入 SQLite 库（看板的持久数据层）")
+    ap.add_argument("--db", help="SQLite 库路径（默认与本脚本同级 web-ai.db）")
     args = ap.parse_args()
 
     data = build(args)
@@ -557,6 +617,10 @@ def main():
     t = data["totals"]
     print("sites=%(sites)d used=%(sitesUsed)d signedIn=%(signedIn)d convs=%(conversations)d calls=%(calls)d" % t)
     print("written:", out)
+
+    if args.to_db:
+        n = write_db(data, args.db)
+        print("db:", " ".join("%s=%d" % kv for kv in n.items()))
 
 
 if __name__ == "__main__":

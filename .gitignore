@@ -8,10 +8,16 @@
 __pycache__/
 *.py[cod]
 
-# 看板生成物（含本机路径与对话 URL，勿提交）
+# 看板生成物（含本机路径、对话 URL 与运行数据，勿提交）
 /scripts/dashboard/data.json
 /scripts/dashboard/dashboard.html
 /scripts/dashboard/checklist.md
+/scripts/dashboard/web-ai.db
+/scripts/dashboard/web-ai.db-shm
+/scripts/dashboard/web-ai.db-wal
+/scripts/dashboard/web-ai-*.csv
+/scripts/dashboard/shots/
+/scripts/dashboard/summaries/
 *.sqlite
 
 # 编辑器 / 系统

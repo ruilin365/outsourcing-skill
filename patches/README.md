@@ -1,11 +1,18 @@
 # patches/
 
+> **推荐先试这条**：`python scripts/setup.py` —— 从仓库自带的 `vendor/*.zip` 快照安装
+> （含 `node_modules`，**不需要外网、不需要 npm，上游删库也能用**）。
+> 下面的补丁是给"想自己从上游源码构建"的人准备的备选路径。
+
 ## `free-web-ai-worker-session.patch`
 
 本 skill（见上层 `SKILL.md`）需要一个**支持 `--session` 命名对话**的 `ask-web-ai`。
 
 上游 [free-web-ai-worker](https://github.com/augustlies/free-web-ai-worker) **尚未提供**该能力，
 因此本补丁在上游基础上补齐它（并附带少量健壮性修复与附件支持）。
+
+**基线**：上游 **v0.2.0**（快照日期 2026-09-20）。上游后续若有改动，本补丁可能无法干净应用——
+这也是仓库自带 `vendor/` 快照的原因。
 
 ### 应用
 

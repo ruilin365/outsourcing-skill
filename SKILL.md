@@ -6,6 +6,10 @@ agent_created: true
 
 # 外包skill —— 监工模式
 
+> 提示：本文件中的 `$DASH` 指本技能的 `scripts/dashboard/` 目录，`$AWA` 指 free-web-ai-worker 的目录，
+> `$TASKS` 指你的产出目录。按自己的环境替换即可。
+
+
 用户一说「**外包**」，我的角色立刻切换为**监工 / 包工头**：我不是主力写手，我是那个**提需求、验收、催返工**的人。
 
 ## 触发条件（重要）
@@ -20,10 +24,10 @@ agent_created: true
 1. **提炼需求** —— 把用户意图压成**一两句**中文（不是长篇格式规范）。
 2. **派发** —— 用 `ask-web-ai` 把需求发给网页版 AI。
 3. **验收** —— 逐条对照需求检查结果（功能/结构/样式/是否踩坑）。
-4. **催返工** —— 不达标就把「差在哪 + 期望」用**一两句**发回去，循环，直到达标。
+4. **催返工** —— 不达标就把「差在哪 + 期望」用**一两句**发回去，同一对话循环，直到达标。
 5. **整合交付** —— 把片段拼进本地文件、留版本备份、交付用户。
 
-全程我**自己不动手写主要产出**。**监工的价值在于做决策**，不是转发消息。
+全程我**自己不动手写主要产出**（除非用户没让外包）。**监工的价值在于做决策**，不是转发消息。
 
 ## 决策规则（监工的关键决策）
 
@@ -49,36 +53,39 @@ agent_created: true
 - **续聊同一对话必须用 `--session`**，`--no-new-chat` 无效（每次都会把标签页导航回站点根地址 = 新对话）。
 - **机密不外发**：外包内容会过第三方站点（DeepSeek 等），涉密材料不要外包。
 
-## 环境准备
+## 环境（本机固定）
 
-你需要：
-
-1. 一个能驱动网页版 AI 的命令行工具 **`ask-web-ai`**（`free-web-ai-worker` 的、**支持 `--session` 命名对话**的版本）。
-   下文用变量 `$AWA` 指代它的目录，按你的实际安装路径替换即可。
-2. **Node**（运行上面的工具）与 **Python 3**（运行本 skill 的 `scripts/`）。
-3. 一个**已登录的网页版 AI**（推荐 DeepSeek：支持附件与视觉；其它如 Qwen / ChatGPT / Grok 亦可）。
-
-登录态与"任务名 → 对话URL"登记簿默认存放于 `~/.agent-web-ai/`
-（`profiles/<browser>/` 存 Cookie，`chats.json` 存对话映射）。
-
-> 首次使用某个需要登录的站点，先跑一次它的登录命令，把登录态落盘，后续即可复用。
+- 工具目录：`$AWA`
+- Node：`node`
+- Python：`python`
+- 登录态与对话登记簿：`~/.agent-web-ai/`（`profiles/edge/` 存 Cookie，`chats.json` 存 **任务名→对话URL**）
+- 辅助脚本：本 skill 的 `scripts/`（`extract.py` 抽取完整文件；`apply_patch.py` 做局部替换）
+- 首选 provider：`deepseek`（已登录，支持附件/视觉）
+- **看板与数据层**：`$DASH\`
+  - `askw.py` —— **外包入口（带记账）**，包装 `ask-web-ai.js`，每次调用当场写进 `web-ai.db`
+  - `collect.py --to-db` —— 增量补全站点/登录态/历史对话（慢变信息），只增不改
+  - `render.py` —— 从库渲染 `dashboard.html` / `checklist.md`（纯读，不再扫描）
+  - `store.py` —— SQLite 持久层（也可 `store.export_csv()` 导出 Excel 可读的 CSV）
 
 ## 标准动作
 
 ### 一、首次外包（让 AI 产出完整文件）
 
-需求写进文件（避免转义），结尾加一句"只输出完整代码，用 ``` 包裹，别解释"：
+需求写进文件（避免转义），结尾要一句"只输出完整代码，用 ``` 包裹，别解释"：
 
 ```bash
-AWA=/path/to/free-web-ai-worker          # 支持 --session 的版本
+PY="python"
+DASH="$DASH"
 
-node "$AWA/bin/ask-web-ai.js" ask -p deepseek --session <任务名> \
+"$PY" "$DASH/askw.py" ask -p deepseek --session <任务名> \
   --file 需求.txt --timeout 180 --no-cache > 结果.json 2> 结果.err
 
-python scripts/extract.py 结果.json 目标.html
+"$PY" "<skill>/scripts/extract.py" 结果.json 目标.html
 ```
 
-`--session <任务名>` 会把本次对话的 URL 记进 `chats.json`，后续同名 `--session` 自动**回到同一对话续聊**（还可带 `--attach 当前文件` 把上下文给过去）。
+> `askw.py` 是 `bin/ask-web-ai.js` 的**等价包装**：参数原样转发、stdout 原样输出（`> 结果.json` 照旧可用），额外做两件事——① 把这次调用**当场记账**进看板数据库（站点/会话名/状态/耗时/字数/对话URL），② 把 `--file/--attach` 的相对路径转绝对（否则会在工具目录下找不到文件）。想跳过记账加 `--no-record`。
+
+`--session <任务名>` 会把这次对话的 URL 记进 `chats.json`，后续同名 `--session` 自动**回到同一对话续聊**（还可带 `--attach 当前文件` 把上下文给过去）。
 
 ### 二、续改（同一对话，只改一段 —— 更省）
 
@@ -87,46 +94,73 @@ python scripts/extract.py 结果.json 目标.html
 > 给 XX 加「YY」。只输出改动的代码，不要完整文件；每处改动写成「改前」「改后」两个代码块，保留原缩进和反引号。
 
 ```bash
-node "$AWA/bin/ask-web-ai.js" ask -p deepseek --session <任务名> \
+"$PY" "$DASH/askw.py" ask -p deepseek --session <任务名> \
   --file 需求.txt --timeout 180 --no-cache > 返回.json 2> 返回.err
 
-python scripts/apply_patch.py 返回.json 目标.html [输出.html]
+"$PY" "<skill>/scripts/apply_patch.py" 返回.json 目标.html [输出.html]
 ```
 
 脚本策略：精确匹配 → 空白容忍匹配（折叠空白后定位并重排缩进），**唯一命中才替换**，多命中跳过，绝不误替换。
 
 ### 三、验收与返工（监工的核心）
 
-- 用 `grep -c` 数关键标记来验收，别肉眼扫（如函数名 / 颜色值 / 按钮文案）。
+- 用 `grep -c` 数关键标记来验收，别肉眼扫（如 `formatTime` / 颜色值 / 按钮文案）。
 - 不达标 → 把**具体差在哪 + 期望**压成一两句，同一 `--session` 发回去，循环。
-- 达标 → `cp 目标 目标.vN` 留版本，再交付。
+- 达标 → `cp 目标.html 目标.vN.html` 留版本，再交付。
 
-## 看板：站点登录态 / 历史对话 / 调用流水
+## 四、看板与数据层（每次外包自动记账）
 
-用户问「哪些 AI 站点登录了、之前聊过什么、调用过几次」时，用看板一次说清，别靠回忆：
+外包的调用流水、站点登录态、历史对话都持久化在 `Claw\web-ai-dashboard\web-ai.db`（SQLite）。
+看板 `dashboard.html` 只负责读库渲染，**不再每次重扫 profile**。
 
-```bash
-cd <你的产出目录>
-python <skill>/scripts/dashboard/collect.py --tasks .   # 扫描本机 -> data.json
-python <skill>/scripts/dashboard/render.py              # -> dashboard.html + checklist.md
-```
+- **实时**：走 `askw.py` 的调用当场入库——看板重渲染就能看到，这是"实时"的唯一来源。
+- **慢变**：`"$PY" collect.py --to-db --tasks "目录A,目录B"`（`--tasks` 支持逗号分隔多个产出目录）补站点 / 登录态 / 对话标题；只增不改，失败扫描不会清空历史。
+- **渲染**：`"$PY" render.py`（库存在时自动从库取数，否则回退 `data.json`）。
+- **要"刷新"就起服务**：`"$PY" serve.py` → 浏览器开 `http://127.0.0.1:8787/dashboard.html`。看板工具栏是两组：「刷新页面」+「自动 30s」开关、「重新扫描浏览器 profile」+「自动 5min」开关，配额点数字即可改。这些**只有从服务打开才生效**；直接双击 `dashboard.html` 只是离线快照。
+  - 「刷新页面」= 只读库重画（毫秒级）——看新入库的调用流水、配额改动。
+  - 「重新扫描浏览器 profile」= 读 Edge 的 Cookie / 登录态 / 浏览历史并增量入库（约 1-2 秒），完了自动刷新页面——**站点登录态、新对话、访问次数只靠它更新**。
+- **要给人看的表格**：`store.export_csv()` → `web-ai-{calls,conversations,providers,sessions}.csv`（utf-8-sig，Excel / WPS 直接打开）。
+- 看板的「今日配额」按**当天实际调用数**实时统计（历史调用不计入今日，跨天自动归零）；配额上限点数字即可改，写回库里永久生效。
+- 别拿 `Claw\outsourcing-skill\examples\dashboard-demo.html`（打包进技能的**假数据示例**）当真看板。
 
-看板长这样（截图 `docs/dashboard-overview.png`）：
+### 调用进行中：实时看护（默认开启，最重要的机制）
 
-![Web AI 外包看板：站点与登录态](docs/dashboard-overview.png)
+`askw.py` 在调用**进行中**每 4 秒做两件事，不用人工插手：
 
-四个页签：**站点与登录态**（Cookie / localStorage 凭据判定，带证据与配额条）、
-**历史对话**（标题、会话名、首末访问、调用次数、答案字数，可展开看该对话的每次调用）、
-**调用流水**（时间线 + 提示词原文 + 耗时 + 成功失败）、**本地产出**（版本备份）。
+1. **处置** —— 执行 `dismiss-popup.js`，把拦路弹窗（年龄确认 / 欢迎层 / Cookie 同意）当场点掉；
+2. **取证** —— 截图留底（只保留最后一张），失败时归档。
 
-要点：
-- 数据源全是**本机只读扫描**：浏览器 profile 的 Cookie / localStorage / History、`chats.json` 会话登记簿、`throttle.json` 配额、CLI 输出的 meta。
-- **登录凭据只记录长度与指纹，不落明文**，所以看板可以放心传阅。
-- 浏览器 / 工具 / 产出目录都自动探测，也可用 `--awa` `--tool` `--tasks` 或环境变量 `AWA_HOME` / `AWA_TOOL` / `AWA_TASKS` 指定。
-- 生成的 `data.json` / `dashboard.html` / `checklist.md` 含本机路径，**不要提交到公开仓库**（已在 .gitignore 里）。
-- 要给外人看效果、又不想暴露本机数据时，用 `python scripts/dashboard/make_demo.py` 生成 `examples/dashboard-demo.html`——数据全虚构、带「示例数据」标记，可以随便传。
+> **为什么必须"当场"而不是"事后"**：Qwen 的弹窗第 30 秒就出现，工具却要到 166 秒才判超时。事后分析只能告诉你"它被弹窗挡住了"，然后你得**再跑一遍**——白等一轮。实时看护直接点掉，那一轮本来就能跑通。
 
-## 已知坑：网页 AI 的代码渲染
+- 关掉：`--no-care`（不处置）/ `--no-capture`（不截图）；间隔用 `--capture-sec <秒>`（默认 4）。
+- 主动插手/侦察：`"$PY" askw.py shot --out 现场.png`；执行任意 JS 用
+  `"$NODE" "$DASH/cdp-eval.mjs" "@$DASH/dismiss-popup.js" qwen`（`@文件` 免转义地狱）。
+  **别去点"登录"**——那会把页面带去登录墙。
 
-- 用**代码块**包裹能保住**缩进和反引号**；纯文本返回会**压平缩进、吃掉反引号**（例如模板字符串的反引号丢失会直接变成语法错误）。
-- 代码块围栏（```）在返回文本里可能被渲染成 `js` / `复制` / `下载` 这样的行 → 按「改前/改后」标签切分并清噪声（`apply_patch.py` 已内置处理）。
+### 调用失败时：先看现场，别急着重跑
+
+| 现场 | 位置 | 里面有什么 |
+| --- | --- | --- |
+| 工具原生工件 | `~/.agent-web-ai/profiles/edge/artifacts/<时间>-<provider>/` | `screenshot.png` + `page.html`（完整 DOM）+ `summary.json`（`bodyText` 页面可见文字） |
+| 归档截图 | `web-ai-dashboard/shots/<时间>-<会话>-tool.png` | 看板「调用流水」有「查看失败现场截图」链接 |
+| **兜底答案** | `web-ai-dashboard/shots/<时间>-<会话>-answer.md` | **工具没取到、但页面已经答完的答案**（自动抠出，已剥离页面页脚） |
+
+- **失败 ≈ 大概率是"取件失败"，不是"没答"**：实测 Qwen 判超时失败，页面上却躺着 2697 字完整回答。`askw.py` 现在会自动识别并捞回来，字数与答案开头也写回库。所以——**先看有没有 `-answer.md`，再考虑重跑**。
+- 识别逻辑：页面文字比需求长 400 字以上、且不含验证码/风控等强拦截特征 → 判为"已答完"，取需求之后的内容作为答案（注意：页面顶部的"登录/注册"是正常导航，**不算**拦截特征——早期版本在这里误判过）。
+- 排查顺序：`-answer.md` → `bodyText` → 截图 → `page.html` 的 DOM → 最后才翻需求文本。
+
+### 会话别聊太久：熔断 + 交接（方案 A）
+
+老对话聊久了网页 AI 会变笨、变慢甚至拒答。`askw.py` 派发前会检查用量：
+
+- 阈值：**8 轮 或 6 万字**（`TURN_LIMIT` / `CHAR_LIMIT`），超过就在 stderr 告警并给出命令。
+- 熔断：`"$PY" askw.py compact --session <名字>` —— 让**在线 AI 自己**在这个会话里产出「接手说明」（任务目标 / 已达成结论 / 遗留问题 / 必须遵守的约束），存 `summaries/<会话>-<时间>.md` 并入库。**摘要由在线 AI 生成，不是本地拼的。**
+- 续接：把这份摘要贴在需求文件开头，用 `--session <名字>-v2` 开新对话。
+
+
+## DeepSeek 渲染坑
+
+- 代码块能保住**缩进和反引号**；纯文本返回会**压平缩进、吃掉反引号**（`${...}` 直接变语法错误）。
+- ``` 围栏本身在返回文本里会渲染成 `js` / `复制` / `下载` 这样的行 → 按「改前/改后」标签切分并清噪声（`apply_patch.py` 已内置处理）。
+- **非代码产出（文案、纯文本、方案）不要去跑 `extract.py`** —— 它只服务代码围栏。直接从结果 JSON 的 `answer` 字段取全文，把开头那几行 `text` / `复制` / `下载` 渲染噪声删掉，剩下的就是可交付正文。
+- 验收非代码产出时，重点是**事实是否与实现一致**（实测踩过：把"自动派发"写成"手动复制粘贴"），而不只是看格式和字数。
