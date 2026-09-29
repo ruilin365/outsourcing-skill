@@ -55,6 +55,8 @@ User ──"outsource"──▶ Supervisor (Agent) ──concise req.──▶ W
 │   └── dashboard/
 │       ├── collect.py       # Local read-only scan: sites / history / calls -> data.json
 │       └── render.py        # data.json -> offline single-file dashboard.html + checklist.md
+├── docs/
+│   └── dashboard-overview.png  # Dashboard screenshot
 └── examples/
     └── todo-app-demo.html   # A demo output produced by this workflow
 ```
@@ -87,6 +89,10 @@ cd <your-output-dir>
 python <skill>/scripts/dashboard/collect.py --tasks .   # local read-only scan -> data.json
 python <skill>/scripts/dashboard/render.py              # -> dashboard.html + checklist.md
 ```
+
+Dashboard preview (the "Sites & sign-in state" tab):
+
+![Web AI outsourcing dashboard: sites and sign-in state](docs/dashboard-overview.png)
 
 The dashboard is a single offline HTML file with four tabs: sites & sign-in state (with evidence and quota bars), past conversations (session names, call counts), call timeline (prompts, latency, status), and local artifacts.
 

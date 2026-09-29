@@ -111,6 +111,10 @@ python <skill>/scripts/dashboard/collect.py --tasks .   # 扫描本机 -> data.j
 python <skill>/scripts/dashboard/render.py              # -> dashboard.html + checklist.md
 ```
 
+看板长这样（截图 `docs/dashboard-overview.png`）：
+
+![Web AI 外包看板：站点与登录态](docs/dashboard-overview.png)
+
 四个页签：**站点与登录态**（Cookie / localStorage 凭据判定，带证据与配额条）、
 **历史对话**（标题、会话名、首末访问、调用次数、答案字数，可展开看该对话的每次调用）、
 **调用流水**（时间线 + 提示词原文 + 耗时 + 成功失败）、**本地产出**（版本备份）。
