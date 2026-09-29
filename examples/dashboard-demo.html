@@ -1,19 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-把 collect.py 产出的 data.json 渲染成一份离线单文件看板 dashboard.html，
-并顺带产出人读版清单 checklist.md。
-
-用法： python render.py [data.json] [输出.html]
-"""
-
-import json
-import os
-import sys
-import datetime as dt
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-
-TPL = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -151,7 +136,7 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
   <div class="note" id="srcNote"></div>
 </div>
 
-<script id="DATA" type="application/json">__DATA__</script>
+<script id="DATA" type="application/json">{"demo":true,"generatedAt":"2026-03-18 22:15:02","sources":{"profile":"C:\\Users\\demo\\.agent-web-ai\\profiles\\edge","tool":"C:\\tools\\free-web-ai-worker","tasks":"C:\\demo\\html-tasks\\ledger"},"providers":[{"id":"duckai","name":"Duck.ai","url":"https://duck.ai/","requiresLogin":false,"enabled":true,"note":"Default. No account needed, fastest in testing (~9s).","cookies":[],"lsPresent":true,"tokens":{},"visits":2,"lastVisit":"2026-03-17 21:12:18","firstVisit":"2026-03-17 21:12:18","conversations":0,"calls":1,"loginState":"anonymous","evidence":["localStorage 中有本站记录","历史访问 2 次，最近 2026-03-17 21:12:18"]},{"id":"qwen","name":"Qwen Chat","url":"https://chat.qwen.ai/","requiresLogin":false,"enabled":true,"note":"Guest mode verified; signing in raises rate limits.","cookies":[],"lsPresent":true,"tokens":{},"visits":1,"lastVisit":"2026-03-18 20:05:31","firstVisit":"2026-03-18 20:05:31","conversations":1,"calls":1,"loginState":"anonymous","evidence":["localStorage 中有本站记录","历史访问 1 次，最近 2026-03-18 20:05:31"]},{"id":"deepseek","name":"DeepSeek","url":"https://chat.deepseek.com/","requiresLogin":true,"enabled":true,"note":"","cookies":[".thumbcache_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d","HWWAFSESID","HWWAFSESTIME","ds_session_id"],"lsPresent":true,"tokens":{"usertoken":{"len":64,"sha256":"0d3f8a1c7b52"},"token":{"len":64,"sha256":"0d3f8a1c7b52"}},"visits":41,"lastVisit":"2026-03-18 22:12:41","firstVisit":"2026-03-17 21:30:02","conversations":4,"calls":9,"loginState":"signed-in","evidence":["Cookie 4 项：.thumbcache_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d, HWWAFSESID, HWWAFSESTIME, ds_session_id","localStorage 中有本站记录","检测到登录凭据 usertoken（64 字符，已脱敏）","检测到登录凭据 token（64 字符，已脱敏）","历史访问 41 次，最近 2026-03-18 22:12:41"]},{"id":"chatgpt","name":"ChatGPT","url":"https://chatgpt.com/","requiresLogin":true,"enabled":true,"note":"","cookies":[],"lsPresent":false,"tokens":{},"visits":0,"lastVisit":null,"firstVisit":null,"conversations":0,"calls":0,"loginState":"unused","evidence":["本 profile 无任何访问痕迹"]},{"id":"grok","name":"Grok","url":"https://grok.com/","requiresLogin":true,"enabled":true,"note":"","cookies":[],"lsPresent":false,"tokens":{},"visits":2,"lastVisit":"2026-03-18 20:58:04","firstVisit":"2026-03-18 20:58:04","conversations":0,"calls":0,"loginState":"not-signed-in","evidence":["有访问记录但未发现 Cookie / localStorage 登录凭据","历史访问 2 次，最近 2026-03-18 20:58:04"]},{"id":"gemini","name":"Google Gemini","url":"https://gemini.google.com/app","requiresLogin":true,"enabled":false,"note":"EXPERIMENTAL: selectors were written against the published DOM; enable only after verifying by hand.","cookies":[],"lsPresent":false,"tokens":{},"visits":0,"lastVisit":null,"firstVisit":null,"conversations":0,"calls":0,"loginState":"unused","evidence":["本 profile 无任何访问痕迹"]}],"conversations":[{"provider":"deepseek","url":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000001","title":"记账小工具首版生成","visits":3,"firstVisit":"2026-03-17 21:33:40","lastVisit":"2026-03-17 22:19:05","kind":"chat","session":"ledger-app","calls":3,"okCalls":3,"answerChars":38172,"avgSec":47.0},{"provider":"deepseek","url":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000003","title":"记账本移动端布局适配","visits":3,"firstVisit":"2026-03-18 20:22:11","lastVisit":"2026-03-18 21:05:44","kind":"chat","session":"ledger-mobile","calls":2,"okCalls":2,"answerChars":19600,"avgSec":50.1},{"provider":"deepseek","url":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000002","title":"记账本深色主题调整","visits":2,"firstVisit":"2026-03-17 22:31:52","lastVisit":"2026-03-17 22:58:36","kind":"chat","session":"ledger-dark","calls":2,"okCalls":2,"answerChars":14200,"avgSec":40.5},{"provider":"deepseek","url":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000004","title":"记账本导出按钮的疑问","visits":1,"firstVisit":"2026-03-18 21:41:07","lastVisit":"2026-03-18 21:47:29","kind":"chat","session":null,"calls":2,"okCalls":1,"answerChars":3910,"avgSec":28.7},{"provider":"qwen","url":"https://chat.qwen.ai/","title":"Qwen Chat 首页","visits":1,"firstVisit":"2026-03-18 20:05:31","lastVisit":"2026-03-18 20:05:31","kind":"entry","session":null,"calls":1,"okCalls":1,"answerChars":1180,"avgSec":9.8}],"sessions":[{"name":"ledger-app","url":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000001","provider":"deepseek","updatedAt":"2026-03-17T14:19:05.221Z","title":"记账小工具首版生成","calls":3},{"name":"ledger-dark","url":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000002","provider":"deepseek","updatedAt":"2026-03-17T14:58:36.508Z","title":"记账本深色主题调整","calls":2},{"name":"ledger-mobile","url":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000003","provider":"deepseek","updatedAt":"2026-03-18T13:05:44.907Z","title":"记账本移动端布局适配","calls":2}],"calls":[{"id":"probe","file":"probe.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":92,"elapsedMs":41230,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000001","startedAt":"2026-03-17 21:36:12","artifacts":null,"promptFile":"probe_prompt.txt","prompt":"我们刚在同一个对话里做过一个「单文件记账小工具」HTML。只回答两点，不要输出代码：\n\n1. 当前主题色是什么？给出十六进制值。\n2. 底部有没有「导出 CSV」按钮？\n\n如果看不到上一版内容，请直接说明。","answerHead":"我看不到你提到的上一版 HTML 内容，因此无法确定主题色的十六进制值，也无法确认底部是否有「导出 CSV」按钮。","source":"cli-json"},{"id":"gen1","file":"gen1.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":18960,"elapsedMs":68520,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000001","startedAt":"2026-03-17 21:41:50","artifacts":null,"promptFile":"req_gen1.txt","prompt":"请帮我写一个单文件 HTML 记账小工具，要求：\n1. 纯前端、单文件、零依赖，双击就能用；\n2. 能记一笔（金额、分类、备注、日期），列表按日期倒序；\n3. 顶部显示本月支出合计，右下角有「+」浮动按钮；\n4. 数据存 localStorage，刷新不丢；\n5. 手机和电脑都要好看。\n\n只输出完整 HTML 文件，不要解释。","answerHead":"<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n<title>记账本<\/title>\n<style>:root{--bg:#f7f8fb;...","source":"cli-json"},{"id":"gen2","file":"gen2.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":19120,"elapsedMs":31240,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000001","startedAt":"2026-03-17 21:58:03","artifacts":null,"promptFile":"req_gen2.txt","prompt":"这一版不错。再加两点：\n1. 分类用下拉选择（餐饮 / 交通 / 购物 / 其他），每类配一个颜色圆点；\n2. 列表项左滑（手机上）/ 悬停（电脑上）出现删除按钮。\n\n给我完整文件，不要省略。","answerHead":null,"source":"cli-json"},{"id":"dark","file":"dark.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":8260,"elapsedMs":44810,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000002","startedAt":"2026-03-17 22:34:19","artifacts":null,"promptFile":"req_dark.txt","prompt":"把这份记账本改成支持深色模式：跟随系统设置自动切换，右上角再给一个手动切换按钮，记住用户的选择。\n\n改动不大，请只给出需要替换的片段，用「改前 / 改后」两个代码块标出来。","answerHead":"下面是需要替换的片段。\n\n改前：\n:root{--bg:#f7f8fb;--text:#1a1d24}","source":"cli-json"},{"id":"dark2","file":"dark2.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":5940,"elapsedMs":36120,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000002","startedAt":"2026-03-17 22:45:11","artifacts":null,"promptFile":"req_dark2.txt","prompt":"深色下金额数字对比度偏低，把支出用浅红、收入用浅绿，但不要刺眼。同样给「改前 / 改后」片段。","answerHead":null,"source":"cli-json"},{"id":"mob1","file":"mob.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":12340,"elapsedMs":52960,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000003","startedAt":"2026-03-18 20:26:38","artifacts":null,"promptFile":"req_mobile.txt","prompt":"手机上顶部的月份合计会换行、浮动按钮挡住列表最后一项。\n请修一下：小屏时合计改成一行可横滑，列表底部留出 72px 安全间距。\n\n给「改前 / 改后」片段。","answerHead":"改前：\n.summary{display:flex;gap:12px}\n\n改后：\n.summary{display:flex;gap:12px;overflow-x:auto}","source":"cli-json"},{"id":"mob2","file":"mob2.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":7260,"elapsedMs":47330,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000003","startedAt":"2026-03-18 20:58:52","artifacts":null,"promptFile":"req_mobile2.txt","prompt":"「+」按钮在 iPhone 的 Safari 上会被底部工具栏挡一半，改成用 env(safe-area-inset-bottom) 定位。给替换片段。","answerHead":null,"source":"cli-json"},{"id":"q1","file":"q1.json","provider":"deepseek","model":"DeepSeek","status":"success","error":null,"chars":3910,"elapsedMs":28740,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000004","startedAt":"2026-03-18 21:43:12","artifacts":null,"promptFile":"req_export.txt","prompt":"我想加一个「导出 CSV」按钮，但不确定中文表头在 Excel 里乱码该怎么处理。\n直接告诉我应该怎么做就行，不用给完整文件。","answerHead":"关键是在导出内容前面加 UTF-8 BOM（\\ufeff），否则 Excel 会按 GBK 猜编码。可以用 Blob + TextEncoder 拼出来…","source":"cli-json"},{"id":"q2","file":"q2.json","provider":"deepseek","model":"DeepSeek","status":"error","error":"页面 60s 内未出现答案节点，已放弃（该会话可能触发了人机校验）。配额已计入当日用量。","chars":0,"elapsedMs":null,"cached":false,"chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000004","startedAt":"2026-03-18 21:46:55","artifacts":null,"promptFile":"req_export2.txt","prompt":"那就按你说的，给我把这个导出按钮完整实现出来，并说明为什么 iOS 上点击可能没反应。","answerHead":null,"source":"cli-json"},{"id":"qw1","file":"qw1.json","provider":"qwen","model":"Qwen","status":"success","error":null,"chars":1180,"elapsedMs":9830,"cached":false,"chatUrl":"https://chat.qwen.ai/","startedAt":"2026-03-18 20:05:31","artifacts":null,"promptFile":null,"prompt":"用一句话说明 localStorage 和 sessionStorage 的区别。","answerHead":"localStorage 关掉浏览器也保留，sessionStorage 关掉标签页就清空。","source":"cli-json"},{"id":"dk1","file":"dk1.json","provider":"duckai","model":"GPT-4o mini","status":"success","error":null,"chars":740,"elapsedMs":8760,"cached":false,"chatUrl":null,"startedAt":"2026-03-17 21:12:18","artifacts":null,"promptFile":null,"prompt":"HTML 里怎么让 input type=number 在手机上调出数字键盘？","answerHead":"用 inputmode=\"numeric\" 或 type=\"tel\"，两者在 iOS 上都会调出数字键盘。","source":"cli-json"}],"quota":[{"provider":"duckai","calls":1,"dailyQuota":40,"lastCallAt":"2026-03-17 21:12:18","history":["2026-03-17 21:12:18"]},{"provider":"qwen","calls":1,"dailyQuota":40,"lastCallAt":"2026-03-18 20:05:31","history":["2026-03-18 20:05:31"]},{"provider":"deepseek","calls":9,"dailyQuota":40,"lastCallAt":"2026-03-18 21:47:29","history":["2026-03-17 21:36:12","2026-03-17 21:41:50","2026-03-17 21:58:03","2026-03-17 22:34:19","2026-03-17 22:45:11","2026-03-18 20:26:38","2026-03-18 20:58:52","2026-03-18 21:43:12","2026-03-18 21:46:55"]}],"outputs":[{"file":"ledger.html","size":41220,"mtime":"2026-03-18 22:14:07"},{"file":"ledger.v1.html","size":19124,"mtime":"2026-03-17 21:52:44"},{"file":"ledger.v2.html","size":20870,"mtime":"2026-03-17 22:03:58"},{"file":"ledger.v3.html","size":23112,"mtime":"2026-03-17 22:49:33"},{"file":"ledger.v4.html","size":35608,"mtime":"2026-03-18 20:59:41"}],"notes":[{"file":"gen_result.txt","note":"整文件生成 v1","size":19100,"mtime":"2026-03-17 21:52:44","chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000001","conversation":"记账小工具首版生成"},{"file":"dark_result.txt","note":"深色模式改动片段","size":8310,"mtime":"2026-03-17 22:36:02","chatUrl":"https://chat.deepseek.com/a/chat/s/0demo000-0000-4000-8000-000000000002","conversation":"记账本深色主题调整"}],"totals":{"sites":6,"sitesUsed":4,"signedIn":1,"conversations":5,"sessions":3,"calls":11,"okCalls":10,"answerChars":77802,"avgSec":36.5}}</script>
 <script>
 (function(){
   var D = JSON.parse(document.getElementById('DATA').textContent);
@@ -334,98 +319,3 @@ pre.prm{background:var(--panel-2);border:1px solid var(--border);border-radius:1
 </script>
 </body>
 </html>
-"""
-
-
-def render_markdown(d, path):
-    """同步产出一份人读清单，便于直接查看或丢进文档里。"""
-    T = d["totals"]
-    L = []
-    L.append("# Web AI 外包站点与对话清单\n")
-    L.append("> 生成时间：%s ｜ 数据来源：本机 Edge profile（只读扫描）\n" % d["generatedAt"])
-    L.append("## 总览\n")
-    L.append("| 指标 | 数值 |")
-    L.append("| --- | --- |")
-    L.append("| 支持站点 / 已使用 | %d / %d |" % (T["sites"], T["sitesUsed"]))
-    L.append("| 已登录站点 | %d |" % T["signedIn"])
-    L.append("| 历史对话 | %d 个 |" % T["conversations"])
-    L.append("| 已命名会话 | %d 个 |" % T["sessions"])
-    L.append("| 外包调用 | %d 次（成功 %d） |" % (T["calls"], T["okCalls"]))
-    L.append("| 累计取回答案 | %.1f 万字 |" % (T["answerChars"] / 10000))
-    L.append("| 平均单次耗时 | %.1f 秒 |" % T["avgSec"])
-    L.append("\n## 一、站点与登录态\n")
-    L.append("| 站点 | 地址 | 登录状态 | 对话数 | 调用数 | 最近活动 |")
-    L.append("| --- | --- | --- | --- | --- | --- |")
-    zh = {"signed-in": "已登录", "anonymous": "游客/免登录",
-          "not-signed-in": "未登录", "unused": "未使用"}
-    for p in d["providers"]:
-        L.append("| %s | %s | %s | %s | %s | %s |" % (
-            p["name"], p["url"], zh.get(p["loginState"], p["loginState"]),
-            p["conversations"], p["calls"], p["lastVisit"] or "—"))
-    L.append("\n### 判定依据\n")
-    for p in d["providers"]:
-        if p["visits"] or p["cookies"]:
-            L.append("- **%s**：%s" % (p["name"], "；".join(p["evidence"])))
-    L.append("\n## 二、历史对话\n")
-    L.append("| 站点 | 对话标题 | 会话名 | 首次访问 | 最近访问 | 调用 | 答案字数 | 链接 |")
-    L.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
-    for c in d["conversations"]:
-        L.append("| %s | %s | %s | %s | %s | %s | %s | [打开](%s) |" % (
-            c["provider"], c["title"], c["session"] or "—",
-            c["firstVisit"] or "—", c["lastVisit"] or "—",
-            c["calls"], ("%.1fk" % (c["answerChars"] / 1000)) if c["answerChars"] else "—",
-            c["url"]))
-    L.append("\n> 「会话名」是外包 skill 里 `--session` 登记的名字，等于一个任务的永久锚点，用它可以在同一对话里续聊。\n")
-    L.append("\n## 三、调用流水\n")
-    L.append("| 时间 | 编号 | 站点 | 结果 | 耗时 | 字数 | 所属对话 | 提示词 |")
-    L.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
-    for x in d["calls"]:
-        title = None
-        for c in d["conversations"]:
-            if c["url"] == x["chatUrl"]:
-                title = c["title"]
-        L.append("| %s | %s | %s | %s | %ss | %s | %s | %s |" % (
-            (x["startedAt"] or "").split(" ")[-1], x["id"], x["provider"] or "—",
-            "成功" if x["status"] == "success" else x["status"],
-            round((x["elapsedMs"] or 0) / 1000), x["chars"] or "—",
-            title or "—", (x["prompt"] or "").replace("\n", " ")[:34].replace("|", "/") or "—"))
-    L.append("\n## 四、本地产出\n")
-    for o in d["outputs"]:
-        L.append("- `%s` — %.1f KB — %s" % (o["file"], o["size"] / 1024, o["mtime"]))
-    L.append("\n### 早期 / 文档型产出\n")
-    for n in d["notes"]:
-        L.append("- `%s` — %s — 归属对话：%s（按时间推断）" % (
-            n["file"], n["note"], n["conversation"] or "未确定"))
-    L.append("""
-## 五、如何刷新
-
-```bash
-cd <你的产出目录>
-python collect.py --tasks .     # 重新扫描本机 profile -> data.json
-python render.py                # 生成 dashboard.html 与本清单 checklist.md
-```
-
-数据全部来自本机，看板文件离线可用，不联网、不上传。
-凭据只记录长度与指纹，不会写入任何明文。
-""")
-    open(path, "w", encoding="utf-8").write("\n".join(L))
-
-
-def main():
-    src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "data.json")
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "dashboard.html")
-    data = json.load(open(src, encoding="utf-8"))
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-    payload = payload.replace("</", "<\\/")
-    html = TPL.replace("__DATA__", payload)
-    html = html.replace("__GENERATED__", dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
-    open(out, "w", encoding="utf-8").write(html)
-    print("written:", out, os.path.getsize(out), "bytes")
-
-    md = os.path.join(os.path.dirname(os.path.abspath(out)), "checklist.md")
-    render_markdown(data, md)
-    print("written:", md, os.path.getsize(md), "bytes")
-
-
-if __name__ == "__main__":
-    main()

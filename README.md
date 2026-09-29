@@ -54,11 +54,12 @@ User ──"outsource"──▶ Supervisor (Agent) ──concise req.──▶ W
 │   ├── apply_patch.py       # Apply "before/after" snippets as exact replacements
 │   └── dashboard/
 │       ├── collect.py       # Local read-only scan: sites / history / calls -> data.json
-│       └── render.py        # data.json -> offline single-file dashboard.html + checklist.md
+│       ├── render.py        # data.json -> offline single-file dashboard.html + checklist.md
+│       └── make_demo.py     # Generates examples/dashboard-demo.html (fictional data)
 ├── docs/
 │   └── dashboard-overview.png  # Dashboard screenshot
 └── examples/
-    └── todo-app-demo.html   # A demo output produced by this workflow
+    └── dashboard-demo.html  # Sample dashboard — all data fictional, just open it
 ```
 
 ## Quick start
@@ -98,6 +99,8 @@ The dashboard is a single offline HTML file with four tabs: sites & sign-in stat
 
 Browser profile, tool directory and output directory are auto-detected; override with `--awa` / `--tool` / `--tasks` (or `AWA_HOME` / `AWA_TOOL` / `AWA_TASKS`).
 Credentials are recorded as **length + fingerprint only, never in plaintext**; generated `data.json` / `dashboard.html` contain local paths and are excluded via `.gitignore`.
+
+Want to see it before scanning your own machine? Just open **[`examples/dashboard-demo.html`](examples/dashboard-demo.html)** — a sample dashboard whose data is **entirely fictional** (marked "示例数据 · 全部虚构" at the top), safe to share. Regenerate it with `python scripts/dashboard/make_demo.py`.
 
 ## Security note
 

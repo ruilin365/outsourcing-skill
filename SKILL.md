@@ -124,6 +124,7 @@ python <skill>/scripts/dashboard/render.py              # -> dashboard.html + ch
 - **登录凭据只记录长度与指纹，不落明文**，所以看板可以放心传阅。
 - 浏览器 / 工具 / 产出目录都自动探测，也可用 `--awa` `--tool` `--tasks` 或环境变量 `AWA_HOME` / `AWA_TOOL` / `AWA_TASKS` 指定。
 - 生成的 `data.json` / `dashboard.html` / `checklist.md` 含本机路径，**不要提交到公开仓库**（已在 .gitignore 里）。
+- 要给外人看效果、又不想暴露本机数据时，用 `python scripts/dashboard/make_demo.py` 生成 `examples/dashboard-demo.html`——数据全虚构、带「示例数据」标记，可以随便传。
 
 ## 已知坑：网页 AI 的代码渲染
 

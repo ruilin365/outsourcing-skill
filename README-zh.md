@@ -54,11 +54,12 @@
 │   ├── apply_patch.py       # 把「改前/改后」片段「精确替换」进本地文件
 │   └── dashboard/
 │       ├── collect.py       # 扫描本机：站点登录态 / 历史对话 / 调用记录 -> data.json
-│       └── render.py        # data.json -> 离线单文件看板 dashboard.html + checklist.md
+│       ├── render.py        # data.json -> 离线单文件看板 dashboard.html + checklist.md
+│       └── make_demo.py     # 生成 examples/dashboard-demo.html（虚构数据）
 ├── docs/
 │   └── dashboard-overview.png  # 看板截图
 └── examples/
-    └── todo-app-demo.html   # 由本流程产出的示例（单文件待办 App）
+    └── dashboard-demo.html  # 示例看板（数据全部虚构，双击即可看效果）
 ```
 
 ## 快速开始
@@ -97,6 +98,8 @@ python <skill>/scripts/dashboard/render.py              # -> dashboard.html + ch
 
 浏览器 profile、工具目录、产出目录均自动探测，也可用 `--awa` / `--tool` / `--tasks`（或环境变量 `AWA_HOME` / `AWA_TOOL` / `AWA_TASKS`）指定。
 登录凭据**只记录长度与指纹，不落明文**；生成的 `data.json` / `dashboard.html` 含本机路径，已在 `.gitignore` 中排除。
+
+不想先扫描本机也能看效果：直接打开 **[`examples/dashboard-demo.html`](examples/dashboard-demo.html)**，那是一份**数据全部虚构**的示例（页顶带「示例数据 · 全部虚构」标记），随便传看都没有风险。要重新生成：`python scripts/dashboard/make_demo.py`。
 
 ## 安全提示
 
